@@ -27,6 +27,20 @@ Searching and browsing photos **never calls OpenAI**. The user must select one p
 
 The current discovery run is experimental: public Overpass may time out, Mapillary coverage varies, and no completed three-venue run has been verified yet. Photo links and attribution come from Mapillary; no photo is bundled in the repository.
 
+## Google source comparison
+
+The separate `/google` page tests Google Places (New) and Google Street View Static without replacing the OpenStreetMap/Mapillary pilot. Enter a London area and one business type. Each search makes one billed Places Text Search request, returns up to 12 businesses, and does not request Places photos. Selecting a business requests only Street View metadata (Google documents this endpoint as no-charge). Its camera coordinates are used to aim a 70° field-of-view image at the place. The image itself is requested only after clicking **Load 1 paid Street View image** and confirming. You can adjust the heading by 15° or 30° before that request. The resulting image is displayed temporarily, not saved or edited.
+
+To try it:
+
+1. Create a Google Cloud project with billing enabled.
+2. Enable **Places API (New)** and **Street View Static API** in that project.
+3. Create an API key, restrict it to those two APIs, and add `GOOGLE_MAPS_API_KEY=...` to `.env.local`. Do not use `NEXT_PUBLIC_` or commit the key. Restart `npm run dev`.
+4. Open `http://localhost:3000/google`. Start with Soho and Cafes.
+5. Set low daily quotas for both APIs in Google Cloud before experimenting.
+
+There is no application-level Google request cap. Each Places search makes one Google Text Search Pro request (up to 12 results); selecting a venue calls no-charge Street View metadata; the image button makes one Static Street View request after confirmation. Google imagery is for source comparison only; review Google's content-use terms before any compositing, storage, or export. If you deploy with a key, protect these endpoints from public abuse and configure quotas in Google Cloud.
+
 ## Checks
 
 ```bash

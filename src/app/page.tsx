@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { ArrowRight, ExternalLink, Image as ImageIcon, MapPin, Search, Sparkles } from "lucide-react";
 import type { FrontageImage, FrontageResult, SearchResult, Venue } from "@/lib/discovery/types";
 
@@ -95,7 +96,7 @@ export default function Home() {
       <header className="border-b border-[#d8d9cb] bg-[#f6f5ed]">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-5 md:px-10">
           <div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-full bg-[#1e4d39] text-[#e8ecdd]"><Sparkles size={17} /></span><span className="text-sm font-bold uppercase tracking-[0.16em]">Storefront <span className="font-normal">Visualiser</span></span></div>
-          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7f8878] sm:block">Discovery / London pilot</span>
+          <Link href="/google" className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#315a3d] hover:underline">Try Google comparison <ArrowRight size={14} /></Link>
         </div>
       </header>
 
