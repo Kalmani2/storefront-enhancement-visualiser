@@ -8,6 +8,7 @@ export function planterFailure(error: unknown) {
 }
 
 export function requireLocalMutation(request: Request) {
+  if (process.env.VERCEL === "1") throw new PlanterError("Planter uploads and extraction are not available in this hosted demo yet.", 503);
   const url = new URL(request.url);
   const host = request.headers.get("host")?.split(":")[0];
   if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) || (host && !["localhost", "127.0.0.1", "["].includes(host))) throw new PlanterError("The planter library is configured for local use only.", 403);

@@ -4,7 +4,7 @@ import { parseSettings } from "@/lib/planters/validation";
 import { planterFailure, requireLocalMutation } from "@/lib/planters/http";
 
 export const runtime = "nodejs";
-export const maxDuration = 400;
+export const maxDuration = 300;
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {

@@ -29,39 +29,20 @@ export type Project = {
   };
 };
 
-const key = "storefront-visualiser-projects-v1";
-
-// Honest starter records: real OSM venues, but no entrance image has passed review.
-export const starterProjects: Project[] = [
-  {
-    id: "starter-andrew-edmunds", title: "Andrew Edmunds", venueId: "way/273697611",
-    source: "openstreetmap", address: "46 Lexington Street, W1F 0LP", category: "Restaurant",
-    sourceUrl: "https://www.openstreetmap.org/way/273697611",
-    createdAt: "2026-10-09",
-  },
-  {
-    id: "starter-antidote", title: "Antidote", venueId: "node/14178744661",
-    source: "openstreetmap", address: "12A Newburgh Street, W1F 7RR", category: "Bar",
-    sourceUrl: "https://www.openstreetmap.org/node/14178744661",
-    createdAt: "2026-10-09",
-  },
-  {
-    id: "starter-flat-white", title: "Flat White", venueId: "node/14178877182",
-    source: "openstreetmap", address: "17 Berwick Street, W1F 0PT", category: "Café",
-    sourceUrl: "https://www.openstreetmap.org/node/14178877182",
-    createdAt: "2026-10-09",
-  },
-];
+// Requested library reset: discard the old demo records, then retain new projects normally.
+const key = "storefront-visualiser-projects-v2";
+const legacyKey = "storefront-visualiser-projects-v1";
 
 export function readProjects(): Project[] {
-  if (typeof window === "undefined") return starterProjects;
+  if (typeof window === "undefined") return [];
   try {
+    localStorage.removeItem(legacyKey);
     const saved = JSON.parse(localStorage.getItem(key) || "[]") as unknown;
-    if (!Array.isArray(saved)) return starterProjects;
+    if (!Array.isArray(saved)) return [];
     const projects = saved.filter((item): item is Project => Boolean(item && typeof item === "object" && "id" in item && "title" in item && "venueId" in item && "source" in item));
-    return [...projects, ...starterProjects.filter((starter) => !projects.some((project) => project.id === starter.id))];
+    return projects;
   } catch {
-    return starterProjects;
+    return [];
   }
 }
 

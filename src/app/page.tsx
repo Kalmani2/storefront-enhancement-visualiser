@@ -7,10 +7,10 @@ import { ArrowRight, ArrowUpRight, Image as ImageIcon, MapPin, Plus } from "luci
 import { AppHeader } from "@/components/app-header";
 import { FrontagePlaceholder } from "@/components/frontage-placeholder";
 import { PlanterLibrary } from "@/components/planter-library";
-import { readProjects, starterProjects, type Project } from "@/lib/projects";
+import { readProjects, type Project } from "@/lib/projects";
 
 export default function LibraryPage() {
-  const [projects, setProjects] = useState<Project[]>(starterProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
   useEffect(() => {
     const frame = requestAnimationFrame(() => setProjects(readProjects()));
     return () => cancelAnimationFrame(frame);
