@@ -1,132 +1,60 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
-import { ArrowRight, ExternalLink, Image as ImageIcon, MapPin, Search, Sparkles } from "lucide-react";
-import type { FrontageImage, FrontageResult, SearchResult, Venue } from "@/lib/discovery/types";
+import { ArrowRight, ArrowUpRight, Image as ImageIcon, MapPin, Plus, Upload } from "lucide-react";
+import { AppHeader } from "@/components/app-header";
+import { FrontagePlaceholder } from "@/components/frontage-placeholder";
+import { PlanterPlaceholder } from "@/components/planter-placeholder";
+import { planterOptions } from "@/lib/planters";
+import { readProjects, starterProjects, type Project } from "@/lib/projects";
 
-type ImageResult = { images: FrontageImage[]; found: number };
+export default function LibraryPage() {
+  const [projects, setProjects] = useState<Project[]>(starterProjects);
+  const [uploadedImage, setUploadedImage] = useState("");
+  const [uploadedName, setUploadedName] = useState("");
+  const uploadRef = useRef("");
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setProjects(readProjects()));
+    return () => {
+      cancelAnimationFrame(frame);
+      if (uploadRef.current) URL.revokeObjectURL(uploadRef.current);
+    };
+  }, []);
 
-async function postJson<T>(path: string, body: object): Promise<T> {
-  const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "The request could not be completed.");
-  return payload as T;
-}
-
-export default function Home() {
-  const [location, setLocation] = useState("Soho");
-  const [search, setSearch] = useState<SearchResult | null>(null);
-  const [selected, setSelected] = useState<Venue | null>(null);
-  const [photos, setPhotos] = useState<Record<string, ImageResult>>({});
-  const [loadingPhotos, setLoadingPhotos] = useState<string[]>([]);
-  const [activePhoto, setActivePhoto] = useState(0);
-  const [verification, setVerification] = useState<FrontageResult | null>(null);
-  const [verifying, setVerifying] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState("");
-  const [photoError, setPhotoError] = useState("");
-
-  async function loadPhotos(venue: Venue) {
-    setLoadingPhotos((previous) => [...previous, venue.id]);
-    try {
-      const result = await postJson<ImageResult>("/api/images", { venue });
-      setPhotos((previous) => ({ ...previous, [venue.id]: result }));
-    } catch (cause) {
-      setPhotoError(cause instanceof Error ? cause.message : "Street-image lookup failed.");
-    } finally {
-      setLoadingPhotos((previous) => previous.filter((id) => id !== venue.id));
-    }
+  function choosePlanterImage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (uploadRef.current) URL.revokeObjectURL(uploadRef.current);
+    const url = URL.createObjectURL(file);
+    uploadRef.current = url;
+    setUploadedImage(url);
+    setUploadedName(file.name);
   }
 
-  async function run(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (running) return;
-    setRunning(true);
-    setError("");
-    setPhotoError("");
-    setSearch(null);
-    setSelected(null);
-    setPhotos({});
-    setVerification(null);
-    try {
-      const result = await postJson<SearchResult>("/api/discovery", { location });
-      setSearch(result);
-      const first = result.venues[0];
-      if (first) {
-        setSelected(first);
-        void loadPhotos(first);
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Venue discovery failed.");
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  function selectVenue(venue: Venue) {
-    setSelected(venue);
-    setActivePhoto(0);
-    setVerification(null);
-    setPhotoError("");
-    if (!photos[venue.id] && !loadingPhotos.includes(venue.id)) void loadPhotos(venue);
-  }
-
-  async function verify() {
-    if (!selected || !image || verifying) return;
-    if (!window.confirm("This checks one photo with the paid OpenAI API. Run this single assessment?")) return;
-    setVerifying(true);
-    setPhotoError("");
-    try {
-      setVerification(await postJson<FrontageResult>("/api/frontage", { venue: selected, imageId: image.id }));
-    } catch (cause) {
-      setPhotoError(cause instanceof Error ? cause.message : "Visual verification failed.");
-    } finally {
-      setVerifying(false);
-    }
-  }
-
-  const imageResult = selected ? photos[selected.id] : undefined;
-  const image = imageResult?.images[activePhoto];
-  const photoIsLoading = selected ? loadingPhotos.includes(selected.id) : false;
-
-  return (
-    <main className="min-h-screen bg-[#efeee6] text-[#23332a]">
-      <header className="border-b border-[#d8d9cb] bg-[#f6f5ed]">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-5 md:px-10">
-          <div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-full bg-[#1e4d39] text-[#e8ecdd]"><Sparkles size={17} /></span><span className="text-sm font-bold uppercase tracking-[0.16em]">Storefront <span className="font-normal">Visualiser</span></span></div>
-          <Link href="/google" className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#315a3d] hover:underline">Try Google comparison <ArrowRight size={14} /></Link>
-        </div>
-      </header>
-
-      <section className="relative overflow-hidden border-b border-[#d8d9cb] bg-[#e6e7d9]">
-        <div className="pointer-events-none absolute -right-24 -top-44 h-[540px] w-[540px] rounded-full border border-[#cbd3bd]" />
-        <div className="pointer-events-none absolute -right-6 -top-24 h-[420px] w-[420px] rounded-full border border-[#cbd3bd]" />
-        <div className="mx-auto grid max-w-[1440px] gap-12 px-6 py-16 md:grid-cols-[minmax(0,1fr)_390px] md:px-10 md:py-20">
-          <div className="relative max-w-2xl"><p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-[#57745f]">01 / Discover new opportunities</p><h1 className="font-serif text-5xl leading-[0.99] tracking-[-0.035em] text-[#173c2d] md:text-[76px]">Find the next<br /><em className="font-normal">frontage.</em></h1><p className="mt-7 max-w-lg text-base leading-7 text-[#5b6a5c]">Find real London businesses, browse nearby street photographs, and decide which entrances deserve a closer look.</p></div>
-          <form onSubmit={run} className="relative self-end border border-[#cbd2c1] bg-[#f8f7ef] p-6 shadow-[0_24px_52px_rgba(31,54,34,0.09)]"><label htmlFor="location" className="mb-3 block text-xs font-bold uppercase tracking-[0.16em] text-[#3c6046]">Where should we look?</label><div className="flex items-center gap-2 border-b border-[#aebba7] pb-2"><Search size={18} className="text-[#64806b]" /><input id="location" value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Soho, London" className="w-full bg-transparent py-2 text-lg outline-none placeholder:text-[#99a494]" /></div><p className="mt-3 text-xs text-[#7c8879]">Try Soho or another London neighbourhood / postcode.</p><button disabled={running || !location.trim()} className="mt-6 flex w-full items-center justify-between bg-[#204f39] px-5 py-4 text-sm font-semibold text-white transition-colors hover:bg-[#153e2c] disabled:cursor-not-allowed disabled:opacity-60">{running ? "Searching venues…" : "Discover venues"}<ArrowRight size={17} /></button></form>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-[1440px] px-6 py-12 md:px-10 md:py-16">
-        <div className="mb-8 flex flex-wrap items-end justify-between gap-5 border-b border-[#d3d6ca] pb-6"><div><p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#68816c]">The prospect shortlist</p><h2 className="font-serif text-4xl tracking-[-0.025em] text-[#1e3d2e]">{search ? search.location.split(",")[0] + " venues" : "Real places. Real potential."}</h2></div>{search && <p className="text-sm text-[#697468]">{search.totalFound} mapped records · {search.venues.length} candidates</p>}</div>
-        {error && <div role="alert" className="mb-8 border-l-4 border-[#a5564c] bg-[#f6e9e3] px-5 py-4 text-sm text-[#6b3b37]">{error}</div>}
-        {running && <div role="status" className="mb-8 flex items-center gap-3 border border-[#d5dbcd] bg-[#f8f9f2] px-5 py-4 text-sm text-[#2f5d42]"><span className="h-3 w-3 animate-pulse rounded-full bg-[#49865b]" />Searching OpenStreetMap for businesses…</div>}
-        {!search && !running && <div className="grid min-h-64 place-items-center border border-dashed border-[#c5cabb] bg-[#f7f6ee] text-center"><div className="max-w-xs px-5"><MapPin className="mx-auto mb-4 text-[#77927c]" size={28} /><p className="font-serif text-2xl text-[#244532]">Start with a place.</p><p className="mt-2 text-sm leading-6 text-[#798578]">Search Soho above to explore mapped venues and nearby street photos.</p></div></div>}
-
-        {search && <div className="grid gap-7 lg:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.5fr)]">
-          <div className="max-h-[750px] overflow-auto border border-[#d9d5c9] bg-[#f8f7f0]"><div className="sticky top-0 z-10 border-b border-[#d9d5c9] bg-[#f8f7f0] px-5 py-4 text-xs font-bold uppercase tracking-[0.15em] text-[#607666]">Select a business · {search.venues.length} results</div>{search.venues.map((venue, index) => <button key={venue.id} type="button" onClick={() => selectVenue(venue)} className={`flex w-full gap-4 border-b border-[#e3e2d8] px-5 py-4 text-left transition-colors hover:bg-[#e9eee3] ${selected?.id === venue.id ? "bg-[#e1e9dc]" : ""}`}><span className="pt-1 text-xs text-[#83927f]">{String(index + 1).padStart(2, "0")}</span><span className="min-w-0"><span className="block font-serif text-xl leading-tight text-[#233c2b]">{venue.name}</span><span className="mt-1 block text-xs text-[#6e7a6e]">{venue.category} · {venue.address}{venue.postcode ? `, ${venue.postcode}` : ""}</span></span><ArrowRight size={16} className="ml-auto mt-1 shrink-0 text-[#809381]" /></button>)}{search.venues.length === 0 && <p className="p-5 text-sm text-[#687669]">No mapped businesses found in this area.</p>}</div>
-
-          <div className="min-h-[470px] border border-[#d9d5c9] bg-[#f9f8f2] shadow-[0_12px_32px_rgba(35,45,29,0.06)]">{selected && <><div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#deded2] p-5"><div><p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b8d79]">{selected.category} / candidate venue</p><h3 className="font-serif text-3xl text-[#1f3129]">{selected.name}</h3><p className="mt-2 text-sm text-[#697267]">{selected.address}{selected.postcode ? `, ${selected.postcode}` : ""}</p></div><a href={selected.osmUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-[#1d5a42] hover:underline">OpenStreetMap <ExternalLink size={12} /></a></div>
-            <div className="relative flex min-h-[360px] items-center justify-center bg-[#d7d9cf]">{image ? <><img src={image.url} alt={`Nearby street image candidate for ${selected.name}`} className="max-h-[550px] w-full object-contain" /><span className="absolute left-4 top-4 bg-[#f7f6ee] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[#36563d]">Nearby photo · entrance unverified</span></> : <div className="px-8 text-center"><ImageIcon size={32} className="mx-auto mb-3 text-[#748674]" /><p className="font-serif text-xl text-[#3a4e3d]">{photoIsLoading ? "Looking for street photographs…" : "No suitable nearby photograph found"}</p><p className="mt-2 text-sm text-[#738174]">{photoIsLoading ? "Mapillary images are ranked by proximity and camera direction." : "Try another business from the list."}</p></div>}</div>
-            {imageResult && imageResult.images.length > 1 && <div className="flex gap-2 overflow-auto border-b border-[#deded2] p-3">{imageResult.images.map((candidate, index) => <button type="button" key={candidate.id} onClick={() => setActivePhoto(index)} aria-label={`View photo candidate ${index + 1}`} className={`h-16 w-24 shrink-0 overflow-hidden border-2 ${activePhoto === index ? "border-[#1d5a42]" : "border-transparent"}`}><img src={candidate.url} alt="" className="h-full w-full object-cover" /></button>)}</div>}
-            <div className="space-y-4 p-5"><p className="text-sm leading-6 text-[#647264]">These are nearby Mapillary photos, not confirmed images of this entrance. Camera position and direction narrow the search; visual verification is a separate step.</p>{image && <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#6d786d]"><span>{image.distanceMetres}m from mapped venue{image.headingDifference !== undefined ? ` · ${image.headingDifference}° camera offset` : ""}</span><a href={image.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[#1d5a42] hover:underline">Photo by {image.creator} <ExternalLink size={12} /></a></div>}{photoError && <p role="alert" className="border-l-2 border-[#a5564c] bg-[#f6e9e3] p-3 text-sm text-[#6b3b37]">{photoError}</p>}{image && <><button type="button" disabled={verifying} onClick={verify} className="flex items-center gap-2 border border-[#27513a] px-4 py-3 text-sm font-semibold text-[#27513a] hover:bg-[#e8eee3] disabled:opacity-60">{verifying ? "Checking entrance…" : "Run 1 paid AI check"}<ArrowRight size={15} /></button><p className="text-xs text-[#879186]">One selected photo per click. Maximum three checks per server run; browsing never calls OpenAI.</p></>}{verification && <p className={`border-l-2 p-3 text-sm ${verification.image ? "border-[#41774b] bg-[#e5eee2]" : "border-[#a8785b] bg-[#f3ebe2]"}`}>{verification.image ? "Confirmed: " : "Not confirmed: "}{verification.reason}</p>}</div>
-          </>}</div>
-        </div>}
-
-        <div className="mt-12 grid gap-6 border-t border-[#d3d6ca] pt-8 text-sm text-[#687669] md:grid-cols-3"><p><span className="block font-serif text-xl text-[#254732]">01 / Find</span>Business records come from OpenStreetMap.</p><p><span className="block font-serif text-xl text-[#254732]">02 / Inspect</span>Nearby Mapillary photographs are ranked by distance and camera direction.</p><p><span className="block font-serif text-xl text-[#254732]">03 / Verify</span>Optional OpenAI vision checks signage, entrance visibility and planter suitability.</p></div><p className="mt-8 text-xs text-[#899485]">Venue data © OpenStreetMap contributors · Street imagery © Mapillary contributors, CC BY-SA</p>
-      </section>
-    </main>
-  );
+  return <main className="min-h-screen bg-[#f0f0e8] text-[#263c2e]">
+    <AppHeader active="library" />
+    <section className="relative overflow-hidden border-b border-[#d6d9cc] bg-[#e5e8dc]">
+      <div className="pointer-events-none absolute -right-20 -top-64 h-[620px] w-[620px] rounded-full border border-[#cad3c4]" />
+      <div className="pointer-events-none absolute -right-4 -top-48 h-[490px] w-[490px] rounded-full border border-[#cad3c4]" />
+      <div className="relative mx-auto grid max-w-[1460px] gap-8 px-6 py-14 md:grid-cols-[1fr_auto] md:items-end md:px-10 md:py-20">
+        <div><p className="mb-5 text-[11px] font-bold uppercase tracking-[0.21em] text-[#627d65]">Your workspace / London storefronts</p><h1 className="max-w-3xl font-serif text-5xl leading-[0.98] tracking-[-0.04em] text-[#1d4231] md:text-[78px]">A better first<br /><em className="font-normal">impression starts here.</em></h1><p className="mt-7 max-w-xl text-base leading-7 text-[#607263]">Explore current venue projects, find a new storefront, and prepare a planter visualisation in one place.</p></div>
+        <Link href="/google" className="group flex h-14 items-center gap-8 self-end bg-[#254e3b] px-6 text-sm font-semibold text-white shadow-[0_12px_26px_rgba(23,59,40,0.12)] hover:bg-[#193d2e]">Discover a venue <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" /></Link>
+      </div>
+    </section>
+    <section className="mx-auto max-w-[1460px] px-6 py-10 md:px-10 md:py-14">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-[#d2d8cb] pb-5"><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6c896f]">Saved work</p><h2 className="font-serif text-4xl tracking-[-0.025em] text-[#244533]">Project library</h2></div><Link href="/google" className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-[#326148] hover:underline"><Plus size={16} /> Add a venue</Link></div>
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {projects.map((project, index) => <Link href={`/studio?id=${encodeURIComponent(project.id)}`} key={project.id} className="group overflow-hidden border border-[#d5d9cd] bg-[#fbfaf5] shadow-[0_10px_22px_rgba(45,60,40,0.04)] transition-transform hover:-translate-y-1">{project.image?.provider === "mapillary" ? <div className="relative h-[220px] bg-[#dce4d8]"><img src={project.image.url} alt={`Unverified nearby image candidate for ${project.title}`} className="h-full w-full object-cover" /><span className="absolute bottom-3 left-3 bg-[#f8f8f1] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[#45654c]">Unverified photo · Mapillary</span></div> : <FrontagePlaceholder variant={index} compact />}<div className="p-5"><div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6c826e]">{project.category || (project.source === "google" ? "Google Places" : "Venue")}</span><span className="text-[10px] font-semibold text-[#94a092]">{String(index + 1).padStart(2, "0")}</span></div><h3 className="font-serif text-[29px] leading-tight text-[#254733]">{project.title}</h3><p className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-[#768376]"><MapPin size={13} className="mt-0.5 shrink-0" />{project.address || "Open project to retrieve live venue details"}</p><div className="mt-5 flex items-center justify-between border-t border-[#e1e4d9] pt-4"><span className={`flex items-center gap-1.5 text-[11px] font-medium ${project.image ? "text-[#3d6d4d]" : "text-[#a07961]"}`}><ImageIcon size={14} />{project.image ? project.image.provider === "mapillary" ? "Candidate photo saved" : "View framing saved" : "Needs entrance image"}</span><ArrowUpRight size={16} className="text-[#55745c] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" /></div></div></Link>)}
+        <Link href="/google" className="flex min-h-[370px] flex-col items-center justify-center border border-dashed border-[#aebdaf] bg-[#edf1e9] p-8 text-center transition-colors hover:bg-[#e3ebe0]"><span className="mb-5 grid h-14 w-14 place-items-center rounded-full border border-[#9bae9a] text-[#4c7455]"><Plus size={23} strokeWidth={1.6} /></span><span className="font-serif text-2xl text-[#32543c]">Start a new project</span><span className="mt-2 max-w-[230px] text-sm leading-6 text-[#7a8a7b]">Find a real London venue and bring it into the studio.</span><span className="mt-6 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-[#416c4a]">Open venue search <ArrowRight size={14} /></span></Link>
+      </div>
+      <div className="mb-6 mt-16 flex items-end justify-between border-b border-[#d2d8cb] pb-5"><h2 className="font-serif text-4xl tracking-[-0.025em] text-[#244533]">Planter library</h2></div>
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        {planterOptions.map((planter) => <div key={planter.id} className="overflow-hidden border border-[#d5d9cd] bg-[#fbfaf5]"><div className="h-52"><PlanterPlaceholder variant={planter.id} /></div><div className="border-t border-[#e1e4d9] px-5 py-4"><h3 className="font-serif text-2xl text-[#254733]">{planter.title}</h3><p className="mt-1 text-xs text-[#819080]">Illustrative placeholder</p></div></div>)}
+        <label className="group flex min-h-[284px] cursor-pointer flex-col items-center justify-center border border-dashed border-[#aebdaf] bg-[#edf1e9] p-6 text-center transition-colors hover:bg-[#e3ebe0]"><input type="file" accept="image/*" onChange={choosePlanterImage} className="sr-only" aria-label="Add a planter image" /><span className="mb-4 grid h-14 w-14 place-items-center rounded-full border border-[#9bae9a] text-[#4c7455]"><Upload size={22} strokeWidth={1.6} /></span><span className="font-serif text-2xl text-[#32543c]">Add a planter image</span><span className="mt-2 max-w-[220px] text-sm leading-6 text-[#7a8a7b]">Choose an image to preview it here.</span><span className="mt-5 text-xs font-semibold uppercase tracking-[0.1em] text-[#416c4a]">Choose image <ArrowRight size={14} className="ml-1 inline" /></span></label>
+      </div>
+      {uploadedImage && <div className="mt-6 flex max-w-sm items-center gap-4 border border-[#d5d9cd] bg-[#fbfaf5] p-3"><img src={uploadedImage} alt="Selected planter upload" className="h-24 w-24 bg-[#e8e9df] object-contain" /><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#254733]">{uploadedName}</p><p className="mt-1 text-xs leading-5 text-[#7a8a7b]">Image preview only. Planter model creation is not connected yet.</p></div></div>}
+    </section>
+  </main>;
 }

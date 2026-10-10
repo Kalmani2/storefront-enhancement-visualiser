@@ -53,6 +53,31 @@ export async function searchGoogleVenues(location: string, category: GoogleCateg
   return { location: place, category, venues };
 }
 
+export async function getGoogleVenue(placeId: string): Promise<GoogleVenue> {
+  const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+    headers: {
+      "X-Goog-Api-Key": apiKey(),
+      "X-Goog-FieldMask": "id,displayName,formattedAddress,location,primaryType,googleMapsUri",
+    },
+    signal: AbortSignal.timeout(15000),
+    cache: "no-store",
+  });
+  const place = await response.json() as GooglePlace & { error?: { message?: string } };
+  if (!response.ok) throw new Error(`Google Place Details failed (${response.status}): ${place.error?.message ?? "unknown error"}`);
+  if (!place.id || !place.displayName?.text || place.location?.latitude === undefined || place.location.longitude === undefined) {
+    throw new Error("Google returned incomplete venue details.");
+  }
+  return {
+    placeId: place.id,
+    name: place.displayName.text,
+    address: place.formattedAddress || "Address unavailable",
+    latitude: place.location.latitude,
+    longitude: place.location.longitude,
+    category: place.primaryType?.replaceAll("_", " ") || "Venue",
+    mapsUrl: place.googleMapsUri || `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(place.id)}`,
+  };
+}
+
 type GoogleMetadataPayload = {
   status?: string;
   pano_id?: string;
