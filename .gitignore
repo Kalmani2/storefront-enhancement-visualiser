@@ -6,3 +6,6 @@ Documents/
 .env*
 !.env.example
 *.tsbuildinfo
+output/
+.cache/
+.vercel/

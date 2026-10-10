@@ -1,0 +1,10 @@
+.git
+.next
+.cache
+node_modules
+output
+Documents
+coverage
+.env*
+*.tsbuildinfo
+e2e

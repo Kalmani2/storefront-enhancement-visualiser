@@ -61,9 +61,16 @@ export default function StudioPage() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ venue: details }), cache: "no-store",
       });
       const metadata = await metadataResponse.json() as StreetViewMetadata & { error?: string };
-      if (!metadataResponse.ok || !metadata.available || !metadata.panoId) throw new Error(metadata.error || metadata.reason || "No outdoor Street View camera is available.");
+      if (!metadataResponse.ok || !metadata.available || !metadata.candidates?.length) throw new Error(metadata.error || metadata.reason || "No outdoor Street View camera is available.");
+      const savedImage = project.image?.provider === "google-street-view" ? project.image : null;
+      const savedCamera = metadata.candidates.find((candidate) => candidate.panoId === savedImage?.panoId);
+      if (savedImage?.panoId && !savedCamera) throw new Error("The saved camera is no longer among the nearby source-screened views. Return to venue search and choose a new view; no replacement image was loaded.");
+      const camera = savedCamera || metadata.candidates[0];
+      const sameCamera = camera.panoId === savedImage?.panoId;
+      const selectedOffset = sameCamera ? offset : 0;
+      const selectedFov = sameCamera ? savedImage?.fov ?? camera.fov : camera.fov;
       const imageResponse = await fetch("/api/google/streetview/image", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ venue: details, offset }), cache: "no-store",
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ venue: details, offset: selectedOffset, candidateToken: camera.token, fov: selectedFov }), cache: "no-store",
       });
       if (!imageResponse.ok) {
         const payload = await imageResponse.json() as { error?: string };
@@ -75,7 +82,7 @@ export default function StudioPage() {
       setPreviewUrl(url);
       const updated: Project = {
         ...project,
-        image: { provider: "google-street-view", panoId: metadata.panoId, headingOffset: offset, captureDate: metadata.date },
+        image: { provider: "google-street-view", panoId: camera.panoId, headingOffset: selectedOffset, fov: selectedFov, captureDate: camera.date },
       };
       saveProject(updated);
       setProject(updated);

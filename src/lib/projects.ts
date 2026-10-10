@@ -13,6 +13,7 @@ export type Project = {
     provider: "google-street-view";
     panoId: string;
     headingOffset: number;
+    fov?: number;
     captureDate?: string;
   } | {
     provider: "mapillary";
