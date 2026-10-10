@@ -23,6 +23,7 @@ export default function GoogleDiscovery() {
   const [error, setError] = useState("");
   const [projectError, setProjectError] = useState("");
   const [projectTitle, setProjectTitle] = useState("");
+  const [savingProject, setSavingProject] = useState(false);
 
   function switchMode(next: SearchMode) {
     if (searching || next === mode) return;
@@ -53,10 +54,11 @@ export default function GoogleDiscovery() {
   }
 
   async function createProject() {
-    if (!selected) return;
+    if (!selected || savingProject) return;
     const title = projectTitle.trim();
     if (!title) { setProjectError("Enter a project name."); return; }
     if (!frame) { setProjectError("Load the views and choose an image first."); return; }
+    setSavingProject(true);
     try {
       const id = `google-${selected.placeId}`, existing = await findProject(id);
       const project: Project = {
@@ -66,8 +68,17 @@ export default function GoogleDiscovery() {
         image: { provider: "google-street-view", panoId: frame.candidate.panoId, headingOffset: frame.offset, fov: frame.fov, captureDate: frame.candidate.date },
         configuration: existing?.configuration,
       };
-      await saveProject(project); router.push("/");
+      await saveProject(project);
+      if (!frame.imageUrl) throw new Error("The selected image is no longer available. Reload the views.");
+      const snapshot = new FormData();
+      snapshot.set("image", await (await fetch(frame.imageUrl)).blob(), "street-view.jpg");
+      snapshot.set("candidateToken", frame.candidate.token);
+      snapshot.set("offset", String(frame.offset)); snapshot.set("fov", String(frame.fov));
+      const saved = await fetch(`/api/projects/${encodeURIComponent(id)}/source`, { method: "POST", body: snapshot });
+      if (!saved.ok) { const failure = await saved.json(); throw new Error(failure.error || "Could not save the selected Street View image."); }
+      router.push("/");
     } catch (cause) { setProjectError(cause instanceof Error ? cause.message : "The project could not be saved to Supabase."); }
+    finally { setSavingProject(false); }
   }
 
   const hasResults = Boolean(results);
@@ -111,7 +122,7 @@ export default function GoogleDiscovery() {
           {selected ? <>
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#deded2] p-5"><div className="min-w-0"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#688069]">{selected.category}</p><h3 className="font-serif text-3xl text-[#1f3129]">{selected.name}</h3><p className="mt-2 text-sm text-[#697267]">{selected.address}</p></div><a href={selected.mapsUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-xs text-[#1d5a42] hover:underline">Google Maps <ExternalLink size={12} /></a></div>
             <StreetViewPicker key={selected.placeId} venue={selected} onSelection={setFrame} />
-            <div className="space-y-3 border-t border-[#deded2] p-5"><label htmlFor="project-title" className="block text-xs font-semibold text-[#526a57]">Project name</label><input id="project-title" maxLength={160} value={projectTitle} onChange={event => { setProjectTitle(event.target.value); setProjectError(""); }} placeholder="Name your project" className="w-full border border-[#bfcbbd] bg-[#fffefa] px-3 py-3 text-sm outline-none focus:border-[#4f795a]" /><p className="text-xs leading-5 text-[#738171]">{frame ? "Your selected view and framing will be saved with this project." : "Load the views above, then choose an image to save."}</p><button type="button" disabled={!frame || !projectTitle.trim()} onClick={createProject} className="flex w-full items-center justify-between bg-[#204f39] px-5 py-3.5 text-sm font-semibold text-white hover:bg-[#193d2d] disabled:cursor-not-allowed disabled:opacity-50">Save project to library <ArrowRight size={17} /></button>{projectError && <p role="alert" className="text-sm text-[#9a584d]">{projectError}</p>}</div>
+            <div className="space-y-3 border-t border-[#deded2] p-5"><label htmlFor="project-title" className="block text-xs font-semibold text-[#526a57]">Project name</label><input id="project-title" maxLength={160} value={projectTitle} onChange={event => { setProjectTitle(event.target.value); setProjectError(""); }} placeholder="Name your project" className="w-full border border-[#bfcbbd] bg-[#fffefa] px-3 py-3 text-sm outline-none focus:border-[#4f795a]" /><p className="text-xs leading-5 text-[#738171]">{frame ? "Your selected view and framing will be saved with this project." : "Load the views above, then choose an image to save."}</p><button type="button" disabled={savingProject || !frame || !projectTitle.trim()} onClick={createProject} className="flex w-full items-center justify-between bg-[#204f39] px-5 py-3.5 text-sm font-semibold text-white hover:bg-[#193d2d] disabled:cursor-not-allowed disabled:opacity-50">{savingProject ? "Saving project..." : "Save project to library"} <ArrowRight size={17} /></button>{projectError && <p role="alert" className="text-sm text-[#9a584d]">{projectError}</p>}</div>
           </> : <div className="grid min-h-[480px] place-items-center p-8 text-center"><div><MapPin className="mx-auto mb-4 text-[#7b9578]" size={28} /><p className="font-serif text-2xl text-[#3a583d]">Choose a place to view its frontage.</p></div></div>}
         </div>
       </div>}

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Camera, RefreshCw } from "lucide-react";
 import type { GoogleVenue, StreetViewCandidate, StreetViewMetadata } from "@/lib/google/types";
 
-export type StreetViewSelection = { candidate: StreetViewCandidate; offset: number; fov: number };
+export type StreetViewSelection = { candidate: StreetViewCandidate; offset: number; fov: number; imageUrl?: string };
 
 const frameKey = (candidate: StreetViewCandidate, offset = 0, fov = candidate.fov) => `${candidate.panoId}:${offset}:${fov}`;
 
@@ -61,7 +61,7 @@ export function StreetViewPicker({ venue, onSelection }: { venue: GoogleVenue; o
   }, [lookup]);
 
   useEffect(() => {
-    onSelection(camera && image ? { candidate: camera, offset, fov } : null);
+    onSelection(camera && image ? { candidate: camera, offset, fov, imageUrl: image } : null);
   }, [camera, image, offset, fov, onSelection]);
 
   async function loadFrames(frames: StreetViewSelection[]) {

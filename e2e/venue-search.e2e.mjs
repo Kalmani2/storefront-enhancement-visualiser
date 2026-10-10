@@ -16,6 +16,12 @@ test("direct lookup, prospect mode, group loading, framing and project saving", 
     }
     return route.fulfill({ json: projects });
   });
+  await page.route("**/api/projects/*/source", route => {
+    const project = projects[0];
+    project.image = { ...project.image, storagePath: `storefronts/${project.id}/source.png`, width: 640, height: 420 };
+    return route.fulfill({ json: project });
+  });
+  await page.route("**/api/projects/*/image", route => route.fulfill({ contentType: "image/jpeg", body: jpeg }));
   page.on("pageerror", error => errors.push(error.message));
   page.on("dialog", dialog => dialog.accept());
   await page.route("**/api/google/**", async route => {

@@ -1,6 +1,6 @@
 import { getProject, storeFrontage } from "@/lib/project-store";
 import { consumeUpload, readUpload } from "@/lib/uploads";
-import { signedFileUrl } from "@/lib/storage";
+import { getFile } from "@/lib/storage";
 import { planterFailure, requireMutation } from "@/lib/planters/http";
 import { PlanterError } from "@/lib/planters/validation";
 
@@ -12,8 +12,9 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, context: Context) {
   try {
     const project = await getProject((await context.params).id);
-    if (project.image?.provider !== "uploaded") throw new PlanterError("This project has no uploaded frontage photo.", 404);
-    return new Response(null, { status: 307, headers: { Location: await signedFileUrl(project.image.storagePath), "Cache-Control": "no-store" } });
+    if ((project.image?.provider !== "uploaded" && project.image?.provider !== "google-street-view") || !project.image.storagePath) throw new PlanterError("This project has no saved frontage image.", 404);
+    const image = await getFile(project.image.storagePath);
+    return new Response(new Uint8Array(image), { headers: { "Content-Type": project.image.storagePath.endsWith(".png") ? "image/png" : project.image.storagePath.endsWith(".webp") ? "image/webp" : "image/jpeg", "Cache-Control": "no-store" } });
   } catch (error) { return planterFailure(error); }
 }
 

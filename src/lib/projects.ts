@@ -15,6 +15,10 @@ export type Project = {
     headingOffset: number;
     fov?: number;
     captureDate?: string;
+    storagePath?: string;
+    width?: number;
+    height?: number;
+    copyright?: string;
   } | {
     provider: "mapillary";
     imageId: string;
@@ -81,7 +85,7 @@ export async function findProject(id: string): Promise<Project | undefined> {
 }
 
 export function projectImageUrl(project: Project) {
-  if (project.image?.provider === "uploaded") return `/api/projects/${encodeURIComponent(project.id)}/image`;
+  if (project.image?.provider === "uploaded" || (project.image?.provider === "google-street-view" && project.image.storagePath)) return `/api/projects/${encodeURIComponent(project.id)}/image`;
   if (project.image?.provider === "mapillary") return project.image.url;
   return undefined;
 }

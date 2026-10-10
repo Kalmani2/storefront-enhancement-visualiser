@@ -21,6 +21,7 @@ export function parseProject(value: unknown): Project {
     const image = p.image;
     if (image.provider === "google-street-view") {
       if (typeof image.panoId !== "string" || image.panoId.length > 300 || !Number.isFinite(image.headingOffset) || (image.fov !== undefined && (!Number.isFinite(image.fov) || image.fov < 10 || image.fov > 120))) throw new PlanterError("Invalid Street View framing.");
+      if (image.storagePath !== undefined && (typeof image.storagePath !== "string" || !image.storagePath.startsWith(`storefronts/${p.id}/`) || image.storagePath.includes(".."))) throw new PlanterError("Invalid saved Street View image.");
     } else if (image.provider === "mapillary") {
       if (![image.imageId, image.url, image.sourceUrl, image.creator].every(v => typeof v === "string" && v.length <= 4000) || !image.url.startsWith("https://") || !image.sourceUrl.startsWith("https://")) throw new PlanterError("Invalid image reference.");
     } else if (image.provider === "uploaded") {
@@ -50,9 +51,24 @@ export async function storeProject(project: Project, migration = false) {
     const existing = await getProject(project.id);
     if (existing.image?.provider !== "uploaded" || existing.image.storagePath !== project.image.storagePath) throw new PlanterError("Upload frontage images through the project's image endpoint.");
   }
+  if (project.image?.provider === "google-street-view" && project.image.storagePath) {
+    const existing = await getProject(project.id);
+    if (existing.image?.provider !== "google-street-view" || existing.image.storagePath !== project.image.storagePath || existing.image.panoId !== project.image.panoId || existing.image.headingOffset !== project.image.headingOffset || existing.image.fov !== project.image.fov) throw new PlanterError("Save Street View images through the project's source endpoint.");
+  }
   const { data, error } = await storageClient().from("projects").upsert({ id: project.id, title: project.title, data: project, created_at: project.createdAt, updated_at: new Date().toISOString() }, { onConflict: "id", ignoreDuplicates: migration }).select("data").maybeSingle();
   if (error) throw new PlanterError("The project could not be saved.", 502);
   return data ? data.data as Project : getProject(project.id);
+}
+
+export async function storeGoogleFrontage(project: Project, bytes: Buffer, copyright: string) {
+  if (project.image?.provider !== "google-street-view") throw new PlanterError("Choose a Street View image first.");
+  const source = await normaliseSource(bytes);
+  const key = `storefronts/${project.id}/${randomUUID()}.png`;
+  await putFile(key, source.data);
+  const updated: Project = { ...project, image: { ...project.image, storagePath: key, width: source.width, height: source.height, copyright } };
+  const { error } = await storageClient().from("projects").update({ data: updated, updated_at: new Date().toISOString() }).eq("id", project.id);
+  if (error) throw new PlanterError("The selected Street View image could not be saved.", 502);
+  return updated;
 }
 
 export async function storeFrontage(id: string, bytes: Buffer, originalFilename: string) {

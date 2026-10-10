@@ -35,7 +35,7 @@ describe("Street View image request controls", () => {
     render(<StreetViewPicker venue={venue} onSelection={selected} />);
     fireEvent.click(await screen.findByRole("button", { name: "Load 5 views" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
-    await waitFor(() => expect(selected).toHaveBeenCalledWith({ candidate: cameras[0], offset: 0, fov: 65 }));
+    await waitFor(() => expect(selected).toHaveBeenCalledWith(expect.objectContaining({ candidate: cameras[0], offset: 0, fov: 65, imageUrl: "blob:test-image" })));
     expect(window.confirm).toHaveBeenCalledOnce();
     const calls = vi.mocked(fetch).mock.calls.slice(1);
     expect(calls.map(([, options]) => JSON.parse(options!.body as string).candidateToken)).toEqual(cameras.map((camera) => camera.token));
@@ -43,7 +43,7 @@ describe("Street View image request controls", () => {
     expect(screen.queryByRole("button", { name: "Load selected view only" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Framing"), { target: { value: "45" } });
     fireEvent.click(await screen.findByRole("button", { name: "Load 1 view" }));
-    await waitFor(() => expect(selected).toHaveBeenCalledWith({ candidate: cameras[0], offset: 0, fov: 45 }));
+    await waitFor(() => expect(selected).toHaveBeenCalledWith(expect.objectContaining({ candidate: cameras[0], offset: 0, fov: 45, imageUrl: "blob:test-image" })));
     expect(fetch).toHaveBeenCalledTimes(7);
     expect(JSON.parse(vi.mocked(fetch).mock.calls[6][1]!.body as string)).toMatchObject({ candidateToken: cameras[0].token, fov: 45 });
   });
