@@ -7,6 +7,7 @@ export type Project = {
   source: ProjectSource;
   address?: string;
   category?: string;
+  notes?: string;
   sourceUrl: string;
   createdAt: string;
   image?: {
@@ -78,6 +79,28 @@ export async function readProjects(): Promise<Project[]> {
 
 export async function saveProject(project: Project): Promise<Project> {
   return projectRequest<Project>("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }) });
+}
+
+export type ProjectDetails = Pick<Project, "title" | "address" | "category" | "notes">;
+
+export async function updateProject(id: string, details: ProjectDetails): Promise<Project> {
+  return projectRequest<Project>(`/api/projects/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(details) });
+}
+
+export type DeleteResult = { deleted: true; warning?: string };
+
+export async function deleteProject(id: string): Promise<DeleteResult> {
+  const result = await projectRequest<DeleteResult>(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+  // Do not re-import a deleted project from this browser's migration backup.
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(key) || "[]");
+    if (Array.isArray(saved)) {
+      const remaining = JSON.stringify(saved.filter(project => project?.id !== id));
+      localStorage.setItem(key, remaining);
+      localStorage.setItem(`${key}-migrated`, remaining);
+    }
+  } catch { /* Shared library deletion succeeded even if browser storage is blocked. */ }
+  return result;
 }
 
 export async function findProject(id: string): Promise<Project | undefined> {

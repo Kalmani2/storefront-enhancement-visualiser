@@ -29,6 +29,7 @@ export type PlanterRevision = {
 export type PlanterAsset = {
   id: string;
   name: string;
+  notes?: string;
   createdAt: string;
   updatedAt: string;
   originalFilename: string;

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { findProject, readProjects, saveProject, type Project } from "./projects";
+import { deleteProject, findProject, readProjects, saveProject, updateProject, type Project } from "./projects";
 
 const project: Project = {
   id: "google-test-place", title: "My Soho concept", venueId: "test-place", source: "google",
@@ -12,6 +12,14 @@ let rows: Project[];
 beforeEach(() => {
   localStorage.clear(); rows = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.startsWith("/api/projects/")) {
+      const id = decodeURIComponent(url.slice("/api/projects/".length));
+      if (options?.method === "DELETE") { rows = rows.filter(row => row.id !== id); return Response.json({ deleted: true }); }
+      if (options?.method === "PATCH") {
+        rows = rows.map(row => row.id === id ? { ...row, ...JSON.parse(options.body as string) } : row);
+        return Response.json(rows.find(row => row.id === id));
+      }
+    }
     if (url !== "/api/projects") throw new Error("Unexpected external request.");
     if (options?.method === "POST") {
       const body = JSON.parse(options.body as string);
@@ -26,6 +34,14 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("shared project library", () => {
+  it("updates metadata through PATCH and removes deleted projects from browser migration backups", async () => {
+    localStorage.setItem("storefront-visualiser-projects-v2", JSON.stringify([project]));
+    await readProjects();
+    expect(await updateProject(project.id, { title: "New name", notes: "New notes" })).toMatchObject({ title: "New name", image: project.image });
+    expect(await deleteProject(project.id)).toEqual({ deleted: true });
+    expect(await readProjects()).toEqual([]);
+    expect(localStorage.getItem("storefront-visualiser-projects-v2")).toBe("[]");
+  });
   it("starts empty and never creates demo records", async () => {
     expect(await readProjects()).toEqual([]);
   });

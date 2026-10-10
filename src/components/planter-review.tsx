@@ -8,6 +8,7 @@ import { ArrowLeft, Check, Crosshair, Download, LoaderCircle, Pencil, Sparkles }
 import { AppHeader } from "./app-header";
 import { PlanterSourceSelection } from "./planter-source-selection";
 import { PlanterEdgeEditor } from "./planter-edge-editor";
+import { PlanterActions } from "./library-actions";
 import { planterFileUrl, revisionFile, type ContactPoint, type ExtractionMode, type PlanterAsset, type SelectionBox } from "@/lib/planters/types";
 import { uploadImage } from "@/lib/upload-image";
 
@@ -36,6 +37,8 @@ export function PlanterReview({ id }: { id: string }) {
   const [settingContact, setSettingContact] = useState(false);
   const [contact, setContact] = useState<ContactPoint | null>(null);
   const [name, setName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [notice, setNotice] = useState("");
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [cloudStorage, setCloudStorage] = useState(false);
   const [model, setModel] = useState("gpt-image-1.5");
@@ -54,13 +57,14 @@ export function PlanterReview({ id }: { id: string }) {
         if (current.updatedAt !== lastUpdate.current) {
           setAsset(current);
           lastUpdate.current = current.updatedAt;
-          if (current.revisions.length !== revisionCount.current) setSelectedId(current.revisions.at(-1)?.id || "");
+          if (current.revisions.length !== revisionCount.current) setSelectedId((!initialised.current && current.approvedRevisionId) || current.revisions.at(-1)?.id || "");
           revisionCount.current = current.revisions.length;
         }
         if (!initialised.current) {
           const settings = current.job?.settings || current.lastSettings || current.revisions.at(-1)?.settings;
           if (settings) { setTarget(settings.target); setMode(settings.mode); setSelection(settings.selection); }
           setName(current.name);
+          setNotes(current.notes || "");
           initialised.current = true;
         }
         delay = current.status === "processing" ? 2000 : 8000;
@@ -94,8 +98,13 @@ export function PlanterReview({ id }: { id: string }) {
   }
 
   async function update(body: object) {
-    setSaving(true); setError("");
-    try { applyAsset(await jsonRequest<PlanterAsset>(`/api/planters/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })); }
+    if (busy) return;
+    setSaving(true); setError(""); setNotice("");
+    try {
+      const updated = await jsonRequest<PlanterAsset>(`/api/planters/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      applyAsset(updated); setName(updated.name); setNotes(updated.notes || ""); setNotice("Planter saved.");
+      if ("approvedRevisionId" in body) setContact(null);
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save this asset."); }
     finally { setSaving(false); }
   }
@@ -128,7 +137,8 @@ export function PlanterReview({ id }: { id: string }) {
     <AppHeader active="library" />
     <section className="mx-auto max-w-[1460px] px-6 py-8 md:px-10 md:py-10">
       <Link href="/#planter-library-title" className="mb-6 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#64816b] hover:underline"><ArrowLeft size={14} /> Planter library</Link>
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-5 border-b border-[#d2d8cb] pb-6"><div><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#718573]">Asset review</p><h1 className="font-serif text-4xl tracking-[-0.035em] text-[#244533] md:text-5xl">{asset?.name || "Opening planter…"}</h1></div>{asset?.approvedRevisionId && <span className="inline-flex items-center gap-2 border border-[#b9cdb4] bg-[#e6eee2] px-3 py-2 text-xs font-semibold text-[#41694a]"><Check size={14} />Approved asset saved</span>}</div>
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-5 border-b border-[#d2d8cb] pb-6"><div className="min-w-0"><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#718573]">Asset review</p><h1 className="break-words font-serif text-4xl tracking-[-0.035em] text-[#244533] md:text-5xl">{asset?.name || "Opening planter…"}</h1></div><div className="flex flex-wrap items-center gap-4">{asset?.approvedRevisionId && <span className="inline-flex items-center gap-2 border border-[#b9cdb4] bg-[#e6eee2] px-3 py-2 text-xs font-semibold text-[#41694a]"><Check size={14} />Approved asset saved</span>}{asset && !saving && <PlanterActions asset={asset} edit={false} onUpdated={applyAsset} onDeleted={warning => router.push(`/?deleted=planter${warning ? "&cleanup=1" : ""}`)} />}</div></div>
+      {notice && <p role="status" className="mb-6 text-sm text-[#496b50]">{notice}</p>}
       {error && <p role="alert" className="mb-6 border-l-2 border-[#a75c52] bg-[#f5eae4] px-4 py-3 text-sm text-[#784841]">{error}</p>}
       {asset?.error && <p role="alert" className="mb-6 border-l-2 border-[#a75c52] bg-[#f5eae4] px-4 py-3 text-sm text-[#784841]">{asset.error}</p>}
       {configured === false && <p className="mb-6 border border-[#d9c9ac] bg-[#f8f0e1] p-4 text-sm text-[#8a6944]">Paid extraction is disabled or its API key is not configured on this server. You can still review, refine and approve existing results.</p>}
@@ -136,7 +146,8 @@ export function PlanterReview({ id }: { id: string }) {
         <div className="space-y-6">
           <div className={panel}><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e0e4d9] px-5 py-4"><h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5d7863]">Original image</h2><div className="flex gap-4 text-xs text-[#64816b]"><button type="button" disabled={Boolean(busy)} onClick={() => void duplicate()} className="hover:underline disabled:opacity-40">Create another asset from photo</button><a href={planterFileUrl(id, asset.originalFile, true)} className="hover:underline">Download original</a></div></div><PlanterSourceSelection src={planterFileUrl(id, "source.png")} selection={selection} onChange={setSelection} disabled={Boolean(busy)} /></div>
           <div className={`${panel} p-5 md:p-6`}>
-            <label htmlFor="planter-name" className="mb-2 block text-xs font-semibold text-[#5c765f]">Asset name</label><div className="mb-5 flex gap-2"><input id="planter-name" maxLength={120} value={name} onChange={event => setName(event.target.value)} className={field} /><button type="button" disabled={busy || !name.trim() || name === asset.name} onClick={() => void update({ name })} className="border border-[#aebfa7] px-4 text-xs font-semibold text-[#41694a] disabled:opacity-40">Save</button></div>
+            <label htmlFor="planter-name" className="mb-2 block text-xs font-semibold text-[#5c765f]">Asset name</label><input id="planter-name" maxLength={120} disabled={Boolean(busy)} value={name} onChange={event => setName(event.target.value)} className={field} />
+            <label htmlFor="planter-notes" className="mb-2 mt-4 block text-xs font-semibold text-[#5c765f]">Planter notes</label><textarea id="planter-notes" rows={3} maxLength={2000} disabled={Boolean(busy)} value={notes} onChange={event => setNotes(event.target.value)} placeholder="Materials, dimensions or product details…" className={`${field} resize-y`} /><button type="button" disabled={busy || !name.trim() || (name === asset.name && notes === (asset.notes || ""))} onClick={() => void update({ name: name.trim(), notes: notes.trim() })} className="mb-6 mt-3 border border-[#aebfa7] px-4 py-2.5 text-xs font-semibold text-[#41694a] disabled:opacity-40">Save details</button>
             <label htmlFor="planter-target" className="mb-2 block text-xs font-semibold text-[#5c765f]">Which arrangement should we extract?</label><textarea id="planter-target" rows={3} maxLength={1500} disabled={Boolean(busy)} value={target} onChange={event => setTarget(event.target.value)} placeholder="e.g. The two rust-coloured containers in the foreground, with the palm and flowers. Exclude the trough behind them." className={`${field} resize-y`} /><p className="mt-2 text-xs leading-5 text-[#7c8a79]">Leave blank to use the main foreground arrangement. Plants and containers stay together.</p>
             <fieldset className="mt-5"><legend className="mb-2 text-xs font-semibold text-[#5c765f]">Method</legend><div className="grid gap-2 sm:grid-cols-2">{([{ value: "extract", title: "Extract visible", description: "Keep visible shape; missing areas stay missing." }, { value: "reconstruct", title: "Complete hidden parts", description: "AI fills occluded foliage and cropped containers." }] as const).map(option => <label key={option.value} className={`cursor-pointer border p-3 ${mode === option.value ? "border-[#577d5c] bg-[#eaf0e5]" : "border-[#d3dccd]"}`}><span className="flex items-center gap-2 text-sm font-semibold text-[#3f6248]"><input type="radio" name="method" disabled={Boolean(busy)} checked={mode === option.value} onChange={() => setMode(option.value)} />{option.title}</span><span className="mt-2 block text-xs leading-5 text-[#7c8a79]">{option.description}</span></label>)}</div></fieldset>
             <p className="mt-5 text-[11px] text-[#85917f]">Medium quality · {model}</p>
@@ -158,7 +169,7 @@ export function PlanterReview({ id }: { id: string }) {
               <div className="flex flex-wrap gap-4 text-xs font-semibold text-[#496b50]"><button type="button" disabled={Boolean(busy)} onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 hover:underline disabled:opacity-40"><Pencil size={14} />Refine edges</button><button type="button" disabled={Boolean(busy)} onClick={() => { setView("asset"); setSettingContact(!settingContact); }} className="inline-flex items-center gap-1.5 hover:underline disabled:opacity-40"><Crosshair size={14} />{settingContact ? "Click the base in the preview" : "Set ground contact"}</button><a href={planterFileUrl(id, revisionFile(revision.id), true)} className="inline-flex items-center gap-1.5 hover:underline"><Download size={14} />PNG</a><a href={planterFileUrl(id, revisionFile(revision.id, "mask"), true)} className="hover:underline">Mask</a></div>
               {revision.warnings.map(warning => <p key={warning} className="mt-4 text-xs leading-5 text-[#897455]">{warning}</p>)}
               <button type="button" disabled={Boolean(busy) || (asset.approvedRevisionId === revision.id && !contact)} onClick={() => void update({ approvedRevisionId: revision.id, contactPoint })} className="mt-5 flex w-full items-center justify-between border border-[#537958] bg-[#e9f0e4] px-4 py-3 text-sm font-semibold text-[#365d40] hover:bg-[#dfead8] disabled:opacity-50"><span>{asset.approvedRevisionId === revision.id && !contact ? "Approved" : "Approve this asset"}</span><Check size={17} /></button>
-              <p className="mt-3 text-xs leading-5 text-[#81907d]">Saves the approved PNG, mask and placement data to your local output folder.</p>
+              <p className="mt-3 text-xs leading-5 text-[#81907d]">Saves the approved PNG, mask and placement data {cloudStorage ? "to Supabase, shared by local and deployed libraries" : "to your local output folder"}.</p>
             </div>
             <div className={panel}><div className="flex items-center justify-between border-b border-[#e0e4d9] px-5 py-4"><h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5d7863]">Versions</h2><a href={planterFileUrl(id, "asset.json", true)} className="text-xs text-[#64816b] hover:underline">Download manifest</a></div><div className="grid grid-cols-3 gap-3 p-4 sm:grid-cols-4">{asset.revisions.map((item, index) => <button key={item.id} type="button" aria-label={`Review version ${index + 1}`} aria-pressed={selectedId === item.id} onClick={() => { setSelectedId(item.id); setContact(null); setSettingContact(false); }} className={`overflow-hidden border text-left ${selectedId === item.id ? "border-[#527a59] ring-1 ring-[#527a59]" : "border-[#d0d9ca]"}`}><div className="planter-checker flex h-24 items-center justify-center p-2"><img src={planterFileUrl(id, revisionFile(item.id))} alt="" className="h-full w-full object-contain" /></div><span className="block px-2 py-2 text-[10px] leading-4 text-[#6d816b]">{index + 1} · {item.kind === "manual" ? "Brush edit" : item.settings.mode === "reconstruct" ? "Completed" : "Extracted"}{asset.approvedRevisionId === item.id && " ✓"}</span></button>)}</div></div>
           </>}

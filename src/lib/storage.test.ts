@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { createAsset, assetFile, readStoredAsset, readAsset, updateAsset, writeAsset, writeAssetFile } from "./planters/store";
 import { queueExtraction, saveManualRevision } from "./planters/extraction";
-import { getProject, listProjects, storeFrontage, storeProject, parseProject } from "./project-store";
+import { getProject, listProjects, storeFrontage, storeProject, parseProject, updateProjectDetails } from "./project-store";
+import { removePlanter, removeProject } from "./library-management";
+import { removeAssetFolder } from "./storage";
 import { prepareUpload, readUpload } from "./uploads";
 import { requireLocalMutation, requireMutation } from "./planters/http";
 import { revisionFile } from "./planters/types";
@@ -49,12 +51,22 @@ beforeEach(async () => {
         result = matches.map(row => ({ ...row, ...patch }));
         for (const row of result) table.set(row.id, row);
       }
+      if (method === "DELETE") for (const row of matches) table.delete(row.id);
       const single = headers.get("accept")?.includes("vnd.pgrst.object");
       return Response.json(single ? result[0] ?? null : result);
     }
     const prefix = "/storage/v1/object/";
     if (url.pathname.startsWith(prefix)) {
       const relative = decodeURIComponent(url.pathname.slice(prefix.length));
+      if (relative === "list/test-assets") {
+        const body = JSON.parse(init!.body as string);
+        const names = [...files.keys()].filter(key => key.startsWith(`test-assets/${body.prefix}/`)).map(key => key.slice(`test-assets/${body.prefix}/`.length)).sort();
+        return Response.json(names.slice(body.offset, body.offset + body.limit).map(name => ({ id: name, name })));
+      }
+      if (relative === "test-assets" && method === "DELETE") {
+        for (const key of JSON.parse(init!.body as string).prefixes) files.delete(`test-assets/${key}`);
+        return Response.json([]);
+      }
       if (relative.startsWith("upload/sign/")) return Response.json({ url: `/object/upload/sign/${relative.slice(12)}?token=test-token` });
       if (relative.startsWith("sign/")) return Response.json({ signedURL: `/object/sign/${relative.slice(5)}?token=test-token` });
       if (relative.startsWith("authenticated/")) {
@@ -78,6 +90,123 @@ beforeEach(async () => {
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("Supabase-backed shared library", () => {
+  const project: Project = { id: "google-library-test", title: "Test cafe", venueId: "test-place", source: "google", sourceUrl: "https://maps.google.com", createdAt: "2026-10-10" };
+
+  it("edits project details without changing image, venue identity or configuration", async () => {
+    await storeProject(project);
+    const saved = await storeFrontage(project.id, source, "front.png");
+    const updated = await updateProjectDetails(project.id, { title: " New concept ", address: "Soho", category: "Cafe", notes: "Pair beside the door" });
+    expect(updated).toMatchObject({ title: "New concept", image: saved.image, venueId: saved.venueId, notes: "Pair beside the door" });
+    await expect(updateProjectDetails(project.id, { image: undefined })).rejects.toThrow("Only the project");
+    await expect(updateProjectDetails(project.id, { title: " " })).rejects.toThrow("Invalid project");
+    await expect(updateProjectDetails(project.id, { notes: "a".repeat(2001) })).rejects.toThrow("2,000");
+    expect((await getProject(project.id)).title).toBe("New concept");
+  });
+
+  it("saves planter notes without extraction or replacement of original images", async () => {
+    const asset = await createAsset(source, "reference.png", "Original name");
+    const updated = await updateAsset(asset.id, { name: "Renamed", notes: " Terracotta pair " });
+    expect(updated).toMatchObject({ name: "Renamed", notes: "Terracotta pair", revisions: [] });
+    expect(await assetFile(asset.id, asset.originalFile)).toEqual(source);
+    await expect(updateAsset(asset.id, { notes: "a".repeat(2001) })).rejects.toThrow("2,000");
+    expect(calls.every(call => call.startsWith("/storage/") || call.startsWith("/rest/"))).toBe(true);
+  });
+
+  it("deletes one project and all its source/composite files, leaving planters and other projects intact", async () => {
+    await storeProject(project);
+    await storeProject({ ...project, id: "another-project" });
+    await storeFrontage(project.id, source, "front.png");
+    files.set(`test-assets/compositions/${project.id}/state.json`, Buffer.from(JSON.stringify({ draft: [], versions: [] })));
+    files.set(`test-assets/compositions/${project.id}/old-enhanced.png`, source);
+    files.set("test-assets/storefronts/another-project/source.png", source);
+    const planter = await createAsset(source, "reference.png", "Keep me");
+    expect(await removeProject(project.id)).toEqual({ deleted: true });
+    await expect(getProject(project.id)).rejects.toMatchObject({ status: 404 });
+    expect([...files.keys()].some(key => key.includes(`/${project.id}/`))).toBe(false);
+    expect(await assetFile(planter.id, planter.originalFile)).toEqual(source);
+    expect(await getProject("another-project")).toMatchObject({ id: "another-project" });
+    expect(files.has("test-assets/storefronts/another-project/source.png")).toBe(true);
+  });
+
+  it("blocks deleting a project while an enhancement is running", async () => {
+    await storeProject(project);
+    files.set(`test-assets/compositions/${project.id}/state.json`, Buffer.from(JSON.stringify({ job: { id: "busy" }, draft: [], versions: [] })));
+    await expect(removeProject(project.id)).rejects.toMatchObject({ status: 409 });
+    expect(await getProject(project.id)).toBeDefined();
+  });
+
+  it("blocks deleting planters referenced by drafts or historic versions, even with a changed frontage", async () => {
+    const asset = await createAsset(source, "reference.png", "In use");
+    await storeProject(project);
+    const stateKey = `test-assets/compositions/${project.id}/state.json`;
+    for (const state of [{ sourceKey: "old-frontage", draft: [{ assetId: asset.id }], versions: [] }, { sourceKey: "old-frontage", draft: [], versions: [{ placements: [{ assetId: asset.id }] }] }]) {
+      files.set(stateKey, Buffer.from(JSON.stringify(state)));
+      await expect(removePlanter(asset.id)).rejects.toThrow("used by");
+      expect(await assetFile(asset.id, asset.originalFile)).toEqual(source);
+    }
+    await removeProject(project.id);
+    expect(await removePlanter(asset.id)).toEqual({ deleted: true });
+    await expect(readAsset(asset.id)).rejects.toMatchObject({ status: 404 });
+    expect([...files.keys()].some(key => key.includes(`/planters/${asset.id}/`))).toBe(false);
+  });
+
+  it("blocks deleting a processing planter without removing its files", async () => {
+    const asset = await createAsset(source, "reference.png", "Busy");
+    asset.status = "processing"; await writeAsset(asset);
+    await expect(removePlanter(asset.id)).rejects.toMatchObject({ status: 409 });
+    expect(await assetFile(asset.id, asset.originalFile)).toEqual(source);
+  });
+
+  it("refuses deletion when composition references cannot be read due to a storage failure", async () => {
+    const asset = await createAsset(source, "reference.png", "Keep me safe");
+    await storeProject(project);
+    const fetcher = vi.mocked(fetch), original = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (input, init) => {
+      if (String(input).includes(`/compositions/${project.id}/state.json`)) return Response.json({ message: "Storage unavailable" }, { status: 503 });
+      return original(input, init);
+    });
+    await expect(removePlanter(asset.id)).rejects.toMatchObject({ status: 502 });
+    await expect(removeProject(project.id)).rejects.toMatchObject({ status: 502 });
+    expect(tables.planters.has(asset.id)).toBe(true); expect(tables.projects.has(project.id)).toBe(true);
+  });
+
+  it("rejects a project edit when its saved data changes during the update", async () => {
+    await storeProject(project);
+    const fetcher = vi.mocked(fetch), original = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (input, init) => {
+      if (String(input).includes("/rest/v1/projects") && init?.method === "PATCH") {
+        const row = tables.projects.get(project.id)!;
+        row.updated_at = "2026-10-11T00:00:00.000Z";
+        row.data = { ...project, title: "Changed elsewhere" };
+      }
+      return original(input, init);
+    });
+    await expect(updateProjectDetails(project.id, { title: "Stale name" })).rejects.toMatchObject({ status: 409 });
+    expect((await getProject(project.id)).title).toBe("Changed elsewhere");
+  });
+
+  it("cleans up every page of a large asset folder and never accepts a broad prefix", async () => {
+    for (let index = 0; index < 205; index++) files.set(`test-assets/planters/test-folder/file-${index}.png`, source);
+    files.set("test-assets/planters/other-folder/keep.png", source);
+    await removeAssetFolder("planters/test-folder");
+    expect([...files.keys()]).toEqual(["test-assets/planters/other-folder/keep.png"]);
+    await expect(removeAssetFolder("planters")).rejects.toThrow("Invalid asset folder");
+    await expect(removeAssetFolder("planters/../other-folder")).rejects.toThrow("Invalid asset folder");
+  });
+
+  it("reports orphaned-file cleanup separately after a successful database deletion", async () => {
+    await storeProject(project);
+    const fetcher = vi.mocked(fetch), original = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (input, init) => {
+      if (String(input).includes("/storage/v1/object/list/")) return Response.json({ message: "Storage unavailable" }, { status: 503 });
+      return original(input, init);
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await removeProject(project.id)).toMatchObject({ deleted: true, warning: expect.stringContaining("cleanup") });
+    expect(tables.projects.has(project.id)).toBe(false);
+    log.mockRestore();
+  });
+
   it("stores original files and all metadata on Vercel, and serves signed image redirects", async () => {
     const asset = await createAsset(source, "reference.png", "Test arrangement");
     expect(tables.planters.size).toBe(1);

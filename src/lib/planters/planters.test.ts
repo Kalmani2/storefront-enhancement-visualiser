@@ -9,6 +9,7 @@ import { prepareCutout, normaliseSource } from "./images";
 import { extractionPrompt, parseSettings } from "./validation";
 import { revisionFile, type ExtractionSettings } from "./types";
 import { requireLocalMutation } from "./http";
+import { removePlanter } from "../library-management";
 
 const workspace = process.cwd();
 const cacheRoot = path.resolve(workspace, ".cache");
@@ -40,6 +41,15 @@ function mockImageApi() {
 }
 
 describe("planter extraction and durable review", () => {
+  it("deletes only the chosen local planter folder, and leaves neighbouring assets intact", async () => {
+    const first = await createAsset(source, "first.png", "Delete me");
+    const second = await createAsset(source, "second.png", "Keep me");
+    expect(await removePlanter(first.id)).toEqual({ deleted: true });
+    await expect(readAsset(first.id)).rejects.toMatchObject({ status: 404 });
+    expect(await assetFile(second.id, second.originalFile)).toEqual(source);
+    expect(await listAssets()).toHaveLength(1);
+    await expect(removePlanter("../")).rejects.toThrow("Invalid planter ID");
+  });
   it("rejects unreadable uploads and opaque outputs, including fake checkerboards", async () => {
     await expect(normaliseSource(Buffer.from("not an image"))).rejects.toThrow("could not be read");
     await expect(prepareCutout(source)).rejects.toThrow("no transparency");

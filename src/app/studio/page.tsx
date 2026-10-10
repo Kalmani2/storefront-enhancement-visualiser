@@ -1,12 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { StorefrontComposer } from "@/components/storefront-composer";
+import { ProjectActions } from "@/components/library-actions";
 import { findProject, type Project } from "@/lib/projects";
 
 export default function StudioPage() {
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -37,7 +40,7 @@ export default function StudioPage() {
     <AppHeader active="library" />
     <section className="mx-auto max-w-[1460px] px-5 py-8 md:px-10">
       <Link href="/" className="mb-5 inline-flex items-center gap-2 text-xs font-semibold text-[#627a66]"><ArrowLeft size={14} />Project library</Link>
-      {loading ? <div role="status" className="flex min-h-80 items-center justify-center gap-3 text-sm text-[#627a66]"><LoaderCircle className="animate-spin" size={18} />Opening selected Street View…</div> : project ? <><h1 className="mb-7 font-serif text-4xl text-[#20452f] md:text-5xl">{project.title}</h1><StorefrontComposer key={project.id} project={project} /></> : <div className="border border-[#d0d8ca] bg-[#faf9f2] p-8"><p role="alert" className="mb-5 text-sm text-[#86594b]">{error}</p><Link href="/google" className="text-sm font-semibold text-[#315e44] underline">Open Venue search</Link></div>}
+      {loading ? <div role="status" className="flex min-h-80 items-center justify-center gap-3 text-sm text-[#627a66]"><LoaderCircle className="animate-spin" size={18} />Opening selected Street View…</div> : project ? <><div className="mb-7 flex flex-wrap items-center justify-between gap-4"><h1 className="break-words font-serif text-4xl text-[#20452f] md:text-5xl">{project.title}</h1><ProjectActions project={project} onUpdated={setProject} onDeleted={warning => router.push(`/?deleted=project${warning ? "&cleanup=1" : ""}`)} /></div>{project.notes && <p className="mb-6 whitespace-pre-wrap break-words text-sm text-[#627a66]">{project.notes}</p>}<StorefrontComposer key={project.id} project={project} /></> : <div className="border border-[#d0d8ca] bg-[#faf9f2] p-8"><p role="alert" className="mb-5 text-sm text-[#86594b]">{error}</p><Link href="/google" className="text-sm font-semibold text-[#315e44] underline">Open Venue search</Link></div>}
     </section>
   </main>;
 }

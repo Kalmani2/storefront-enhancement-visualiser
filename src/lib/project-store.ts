@@ -16,6 +16,7 @@ export function parseProject(value: unknown): Project {
   projectId(p.id);
   if (typeof p.sourceUrl !== "string" || !/^https:\/\//.test(p.sourceUrl) || p.sourceUrl.length > 2000) throw new PlanterError("Invalid venue source link.");
   for (const field of [p.address, p.category]) if (field !== undefined && (typeof field !== "string" || field.length > 1000)) throw new PlanterError("Invalid venue information.");
+  if (p.notes !== undefined && (typeof p.notes !== "string" || p.notes.length > 2000)) throw new PlanterError("Use notes of 2,000 characters or fewer.");
   if (p.configuration && (!["classic", "trough", "cylinder"].includes(p.configuration.planter) || !Number.isInteger(p.configuration.quantity) || p.configuration.quantity < 1 || p.configuration.quantity > 4 || !["left", "right", "both"].includes(p.configuration.placement))) throw new PlanterError("Invalid planter configuration.");
   if (p.image) {
     const image = p.image;
@@ -29,7 +30,23 @@ export function parseProject(value: unknown): Project {
     } else throw new PlanterError("Unknown image provider.");
   }
   // Explicit fields prevent untrusted request data being persisted accidentally.
-  return { id: p.id, title: p.title.trim(), venueId: p.venueId, source: p.source, sourceUrl: p.sourceUrl, createdAt: p.createdAt, address: p.address, category: p.category, image: p.image, configuration: p.configuration };
+  return { id: p.id, title: p.title.trim(), venueId: p.venueId, source: p.source, sourceUrl: p.sourceUrl, createdAt: p.createdAt, address: p.address, category: p.category, notes: p.notes, image: p.image, configuration: p.configuration };
+}
+
+export async function updateProjectDetails(id: string, value: unknown): Promise<Project> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new PlanterError("Project details are required.");
+  const body = value as Record<string, unknown>;
+  const fields = ["title", "address", "category", "notes"] as const;
+  if (!Object.keys(body).length || Object.keys(body).some(key => !fields.includes(key as typeof fields[number]))) throw new PlanterError("Only the project name, address, category and notes can be edited here.");
+  const client = storageClient();
+  const { data: row, error } = await client.from("projects").select("data,updated_at").eq("id", projectId(id)).maybeSingle();
+  if (error) throw new PlanterError("The project could not be loaded.", 502);
+  if (!row) throw new PlanterError("Project not found.", 404);
+  const updated = parseProject({ ...row.data, ...body });
+  const result = await client.from("projects").update({ title: updated.title, data: updated, updated_at: new Date().toISOString() }).eq("id", id).eq("updated_at", row.updated_at).select("data").maybeSingle();
+  if (result.error) throw new PlanterError("The project could not be updated.", 502);
+  if (!result.data) throw new PlanterError("This project changed in another session. Reload before trying again.", 409);
+  return result.data.data as Project;
 }
 
 export async function listProjects(): Promise<Project[]> {

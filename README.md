@@ -10,6 +10,7 @@ Built with Next.js, TypeScript, Tailwind CSS, shadcn/ui and Lucide icons.
 - Compare up to five outdoor Street View candidates and adjust camera direction and framing.
 - Save the selected Street View with a project, choose approved planters, automatically estimate scale, and drag arrangements onto the storefront.
 - Export basic compositions or run a separate Medium AI Enhance edit. Both outputs are retained.
+- Edit project names, venue details and notes; edit planter names and notes. Delete items with confirmation, including their stored images. Planters referenced by saved compositions cannot be deleted.
 - Upload planter photos, extract transparent assets at Medium quality, refine edges, review versions and export approved cutouts. High quality is disabled in both the interface and API.
 - Alternative venue discovery using OpenStreetMap and Mapillary.
 

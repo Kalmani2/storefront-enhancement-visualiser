@@ -141,6 +141,10 @@ export async function updateAsset(id: string, value: unknown) {
       if (typeof body.name !== "string" || !body.name.trim() || body.name.length > 120) throw new PlanterError("Use a name between 1 and 120 characters.");
       asset.name = body.name.trim();
     }
+    if (body.notes !== undefined) {
+      if (typeof body.notes !== "string" || body.notes.length > 2000) throw new PlanterError("Use notes of 2,000 characters or fewer.");
+      asset.notes = body.notes.trim();
+    }
     if (body.lastSettings !== undefined) asset.lastSettings = parseSettings(body.lastSettings);
     if (body.approvedRevisionId !== undefined) {
       const revision = asset.revisions.find(r => r.id === body.approvedRevisionId);
