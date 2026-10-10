@@ -8,6 +8,7 @@ import { ArrowUpRight, Check, LoaderCircle, Upload } from "lucide-react";
 import { PlanterPlaceholder } from "./planter-placeholder";
 import { planterOptions } from "@/lib/planters";
 import { planterFileUrl, revisionFile, type PlanterAsset, type PlanterLibraryResult } from "@/lib/planters/types";
+import { uploadImage } from "@/lib/upload-image";
 
 export function PlanterLibrary() {
   const router = useRouter();
@@ -40,7 +41,9 @@ export function PlanterLibrary() {
     try {
       const form = new FormData();
       form.set("image", file);
-      const response = await fetch("/api/planters", { method: "POST", body: form });
+      const response = library.storage === "supabase"
+        ? await fetch("/api/planters", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ upload: await uploadImage(file, "planter") }) })
+        : await fetch("/api/planters", { method: "POST", body: form });
       const asset = await response.json() as PlanterAsset & { error?: string };
       if (!response.ok) throw new Error(asset.error || "The image could not be uploaded.");
       router.push(`/planters/${asset.id}`);
@@ -64,7 +67,7 @@ export function PlanterLibrary() {
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-[#d2d8cb] pb-5"><h2 id="planter-library-title" className="font-serif text-4xl tracking-[-0.025em] text-[#244533]">Planter library</h2><span className="text-xs text-[#768376]">{library?.assets.length ? `${library.assets.length} saved ${library.assets.length === 1 ? "arrangement" : "arrangements"}` : "Plants + containers, together"}</span></div>
     {error && <p role="alert" className="mb-5 border-l-2 border-[#a75c52] bg-[#f5eae4] px-4 py-3 text-sm text-[#784841]">{error}</p>}
     {library?.message && <p className="mb-5 text-sm text-[#916b4c]">{library.message}</p>}
-    {library && library.uploadsAvailable !== false && !library.configured && <p className="mb-5 text-sm text-[#916b4c]">Add OPENAI_API_KEY to .env.local and restart the server to enable extraction. Uploads and saved assets are available now.</p>}
+    {library && library.uploadsAvailable !== false && !library.configured && !library.message && <p className="mb-5 text-sm text-[#916b4c]">Add OPENAI_API_KEY to .env.local and restart the server to enable extraction. Uploads and saved assets are available now.</p>}
     <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
       {library?.assets.map(asset => {
         const revision = asset.revisions.find(r => r.id === asset.approvedRevisionId) || asset.revisions.at(-1);

@@ -46,6 +46,7 @@ export type PlanterLibraryResult = {
   assets: PlanterAsset[];
   configured: boolean;
   uploadsAvailable?: boolean;
+  storage?: "supabase" | "local";
   message?: string;
   model: string;
   outputDirectory: string;

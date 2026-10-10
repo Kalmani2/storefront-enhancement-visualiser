@@ -9,6 +9,7 @@ import { AppHeader } from "./app-header";
 import { PlanterSourceSelection } from "./planter-source-selection";
 import { PlanterEdgeEditor } from "./planter-edge-editor";
 import { planterFileUrl, revisionFile, type ContactPoint, type ExtractionMode, type PlanterAsset, type SelectionBox } from "@/lib/planters/types";
+import { uploadImage } from "@/lib/upload-image";
 
 async function jsonRequest<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...options });
@@ -36,6 +37,7 @@ export function PlanterReview({ id }: { id: string }) {
   const [contact, setContact] = useState<ContactPoint | null>(null);
   const [name, setName] = useState("");
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [cloudStorage, setCloudStorage] = useState(false);
   const [model, setModel] = useState("gpt-image-1.5");
   const initialised = useRef(false);
   const revisionCount = useRef(-1);
@@ -66,7 +68,7 @@ export function PlanterReview({ id }: { id: string }) {
       if (active) timer = setTimeout(load, delay);
     }
     void load();
-    void jsonRequest<{ configured: boolean; model: string }>("/api/planters").then(result => { if (active) { setConfigured(result.configured); setModel(result.model); } }).catch(() => {});
+    void jsonRequest<{ configured: boolean; model: string; storage?: string }>("/api/planters").then(result => { if (active) { setConfigured(result.configured); setModel(result.model); setCloudStorage(result.storage === "supabase"); } }).catch(() => {});
     return () => { active = false; clearTimeout(timer); };
   }, [id]);
 
@@ -101,7 +103,8 @@ export function PlanterReview({ id }: { id: string }) {
   async function saveEdges(blob: Blob) {
     const form = new FormData();
     form.set("image", blob, "edited.png"); form.set("parentId", selectedId);
-    applyAsset(await jsonRequest<PlanterAsset>(`/api/planters/${id}/refine`, { method: "POST", body: form }));
+    const options: RequestInit = cloudStorage ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId: selectedId, upload: await uploadImage(new File([blob], "edited.png", { type: "image/png" }), "edit") }) } : { method: "POST", body: form };
+    applyAsset(await jsonRequest<PlanterAsset>(`/api/planters/${id}/refine`, options));
     setEditing(false); setContact(null);
   }
 
@@ -114,7 +117,8 @@ export function PlanterReview({ id }: { id: string }) {
       const form = new FormData();
       form.set("image", await response.blob(), asset.originalFilename);
       form.set("name", `${asset.name} · another arrangement`);
-      const next = await jsonRequest<PlanterAsset>("/api/planters", { method: "POST", body: form });
+      const options: RequestInit = cloudStorage ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: `${asset.name} · another arrangement`, upload: await uploadImage(new File([form.get("image") as Blob], asset.originalFilename, { type: (form.get("image") as Blob).type }), "planter") }) } : { method: "POST", body: form };
+      const next = await jsonRequest<PlanterAsset>("/api/planters", options);
       router.push(`/planters/${next.id}`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not create another asset."); }
     finally { setSaving(false); }
@@ -127,7 +131,7 @@ export function PlanterReview({ id }: { id: string }) {
       <div className="mb-8 flex flex-wrap items-end justify-between gap-5 border-b border-[#d2d8cb] pb-6"><div><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#718573]">Asset review</p><h1 className="font-serif text-4xl tracking-[-0.035em] text-[#244533] md:text-5xl">{asset?.name || "Opening planter…"}</h1></div>{asset?.approvedRevisionId && <span className="inline-flex items-center gap-2 border border-[#b9cdb4] bg-[#e6eee2] px-3 py-2 text-xs font-semibold text-[#41694a]"><Check size={14} />Approved asset saved</span>}</div>
       {error && <p role="alert" className="mb-6 border-l-2 border-[#a75c52] bg-[#f5eae4] px-4 py-3 text-sm text-[#784841]">{error}</p>}
       {asset?.error && <p role="alert" className="mb-6 border-l-2 border-[#a75c52] bg-[#f5eae4] px-4 py-3 text-sm text-[#784841]">{asset.error}</p>}
-      {configured === false && <p className="mb-6 border border-[#d9c9ac] bg-[#f8f0e1] p-4 text-sm text-[#8a6944]">Set OPENAI_API_KEY in .env.local and restart the server to enable extraction.</p>}
+      {configured === false && <p className="mb-6 border border-[#d9c9ac] bg-[#f8f0e1] p-4 text-sm text-[#8a6944]">Paid extraction is disabled or its API key is not configured on this server. You can still review, refine and approve existing results.</p>}
       {asset && <div className="grid items-start gap-7 lg:grid-cols-2">
         <div className="space-y-6">
           <div className={panel}><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e0e4d9] px-5 py-4"><h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5d7863]">Original image</h2><div className="flex gap-4 text-xs text-[#64816b]"><button type="button" disabled={Boolean(busy)} onClick={() => void duplicate()} className="hover:underline disabled:opacity-40">Create another asset from photo</button><a href={planterFileUrl(id, asset.originalFile, true)} className="hover:underline">Download original</a></div></div><PlanterSourceSelection src={planterFileUrl(id, "source.png")} selection={selection} onChange={setSelection} disabled={Boolean(busy)} /></div>

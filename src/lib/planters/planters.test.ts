@@ -18,6 +18,7 @@ let cutout: Buffer;
 const settings: ExtractionSettings = { target: "Foreground pair with all its plants", mode: "reconstruct", quality: "medium" };
 
 beforeEach(async () => {
+  vi.stubEnv("SUPABASE_SECRET_KEY", "");
   await mkdir(cacheRoot, { recursive: true });
   temporary = await mkdtemp(path.join(cacheRoot, "planter-test-"));
   vi.spyOn(process, "cwd").mockReturnValue(temporary);

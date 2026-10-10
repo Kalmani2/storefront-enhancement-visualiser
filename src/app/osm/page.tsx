@@ -90,25 +90,27 @@ export default function OsmDiscovery() {
     }
   }
 
-  function createProject() {
+  async function createProject() {
     if (!selected) return;
-    const id = `osm-${selected.id.replace("/", "-")}`;
-    const existing = findProject(id);
-    const chosen = photos[selected.id]?.images[activePhoto];
-    const project: Project = {
-      id,
-      title: selected.name,
-      venueId: selected.id,
-      source: "openstreetmap",
-      address: `${selected.address}${selected.postcode ? `, ${selected.postcode}` : ""}`,
-      category: selected.category,
-      sourceUrl: selected.osmUrl,
-      createdAt: existing?.createdAt ?? new Date().toISOString(),
-      image: chosen ? { provider: "mapillary", imageId: chosen.id, url: chosen.url, sourceUrl: chosen.sourceUrl, creator: chosen.creator } : existing?.image,
-      configuration: existing?.configuration,
-    };
-    saveProject(project);
-    router.push("/");
+    try {
+      const id = `osm-${selected.id.replace("/", "-")}`;
+      const existing = await findProject(id);
+      const chosen = photos[selected.id]?.images[activePhoto];
+      const project: Project = {
+        id,
+        title: selected.name,
+        venueId: selected.id,
+        source: "openstreetmap",
+        address: `${selected.address}${selected.postcode ? `, ${selected.postcode}` : ""}`,
+        category: selected.category,
+        sourceUrl: selected.osmUrl,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+        image: chosen ? { provider: "mapillary", imageId: chosen.id, url: chosen.url, sourceUrl: chosen.sourceUrl, creator: chosen.creator } : existing?.image,
+        configuration: existing?.configuration,
+      };
+      await saveProject(project);
+      router.push("/");
+    } catch (cause) { setPhotoError(cause instanceof Error ? cause.message : "The project could not be saved."); }
   }
 
   const imageResult = selected ? photos[selected.id] : undefined;

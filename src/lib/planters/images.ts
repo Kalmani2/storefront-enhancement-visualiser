@@ -11,7 +11,7 @@ export async function normaliseSource(bytes: Buffer) {
     if (!metadata.format || !["jpeg", "png", "webp"].includes(metadata.format)) throw new PlanterError("Use a JPEG, PNG or WebP image.");
     const { data, info } = await sharp(bytes, { limitInputPixels: 50_000_000 }).rotate().resize({ width: 4096, height: 4096, fit: "inside", withoutEnlargement: true }).png().toBuffer({ resolveWithObject: true });
     if (info.width < 100 || info.height < 100) throw new PlanterError("Choose an image at least 100 pixels wide and tall.");
-    return { data, width: info.width, height: info.height, extension: metadata.format === "jpeg" ? "jpg" : metadata.format };
+    return { data, width: info.width, height: info.height, originalWidth: metadata.width!, originalHeight: metadata.height!, extension: metadata.format === "jpeg" ? "jpg" : metadata.format };
   } catch (error) {
     if (error instanceof PlanterError) throw error;
     throw new PlanterError("This image could not be read. Use a valid JPEG, PNG or WebP.");

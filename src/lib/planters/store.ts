@@ -1,15 +1,37 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile, copyFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normaliseSource } from "./images";
 import type { PlanterAsset, PlanterRevision, ContactPoint } from "./types";
 import { revisionFile } from "./types";
 import { parseSettings, PlanterError, validId } from "./validation";
+import { getFile, putFile, storageClient, storageConfigured } from "../storage";
 
 const state = globalThis as typeof globalThis & { planterRuntime?: { owner: string; locks: Map<string, Promise<unknown>> } };
 export const runtime = state.planterRuntime ??= { owner: randomUUID(), locks: new Map() };
 export function outputRoot() { return path.join(process.cwd(), "output", "planters"); }
 export function assetDirectory(id: string) { return path.join(outputRoot(), validId(id)); }
+const versions = new WeakMap<PlanterAsset, number>();
+
+function fileKey(id: string, filename: string) {
+  validId(id);
+  if (!/^[a-zA-Z0-9_.-]+$/.test(filename) || filename.startsWith(".")) throw new PlanterError("Invalid filename.");
+  return `planters/${id}/${filename}`;
+}
+
+export async function writeAssetFile(id: string, filename: string, bytes: Buffer | string, overwrite = false) {
+  const key = fileKey(id, filename);
+  if (storageConfigured()) return putFile(key, Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes), overwrite);
+  if (process.env.VERCEL === "1") throw new PlanterError("Configure Supabase storage before using the hosted library.", 503);
+  await mkdir(assetDirectory(id), { recursive: true });
+  await writeFile(path.join(assetDirectory(id), filename), bytes);
+}
+
+export async function readAssetFile(id: string, filename: string) {
+  const key = fileKey(id, filename);
+  if (storageConfigured()) return getFile(key);
+  return readFile(path.join(assetDirectory(id), filename));
+}
 
 export async function locked<T>(id: string, action: () => Promise<T>): Promise<T> {
   const previous = runtime.locks.get(id) ?? Promise.resolve();
@@ -19,6 +41,18 @@ export async function locked<T>(id: string, action: () => Promise<T>): Promise<T
 }
 
 export async function writeAsset(asset: PlanterAsset) {
+  if (storageConfigured()) {
+    const client = storageClient();
+    const version = versions.get(asset);
+    const row = { id: asset.id, name: asset.name, status: asset.status, data: asset, created_at: asset.createdAt, updated_at: asset.updatedAt, version: (version ?? 0) + 1 };
+    const result = version === undefined
+      ? await client.from("planters").insert(row).select("version").single()
+      : await client.from("planters").update(row).eq("id", asset.id).eq("version", version).select("version").maybeSingle();
+    if (result.error) throw new PlanterError(`Planter could not be saved: ${result.error.message}`, result.error.code === "23505" ? 409 : 502);
+    if (!result.data) throw new PlanterError("This planter changed in another session. Reload before trying again.", 409);
+    versions.set(asset, result.data.version);
+    return;
+  }
   const dir = assetDirectory(asset.id);
   const temporary = path.join(dir, `.asset-${randomUUID()}.tmp`);
   await writeFile(temporary, JSON.stringify(asset, null, 2));
@@ -26,6 +60,15 @@ export async function writeAsset(asset: PlanterAsset) {
 }
 
 export async function readStoredAsset(id: string): Promise<PlanterAsset> {
+  validId(id);
+  if (storageConfigured()) {
+    const { data, error } = await storageClient().from("planters").select("data,version").eq("id", id).maybeSingle();
+    if (error) throw new PlanterError(`Planter could not be loaded: ${error.message}`, 502);
+    if (!data) throw new PlanterError("Planter not found.", 404);
+    const asset = data.data as PlanterAsset;
+    versions.set(asset, data.version);
+    return asset;
+  }
   let asset: PlanterAsset;
   try { asset = JSON.parse(await readFile(path.join(assetDirectory(id), "asset.json"), "utf8")); }
   catch (error) {
@@ -44,9 +87,9 @@ function processAlive(pid?: number) {
 
 export async function readAsset(id: string): Promise<PlanterAsset> {
   const asset = await readStoredAsset(id);
-  if (asset.status === "processing" && asset.job && ((asset.job.owner !== runtime.owner && !processAlive(asset.job.processId)) || Date.now() - Date.parse(asset.job.startedAt) > 10 * 60_000)) {
+  if (asset.status === "processing" && asset.job && ((!storageConfigured() && asset.job.owner !== runtime.owner && !processAlive(asset.job.processId)) || Date.now() - Date.parse(asset.job.startedAt) > 10 * 60_000)) {
     return locked(id, async () => {
-      const current = JSON.parse(await readFile(path.join(assetDirectory(id), "asset.json"), "utf8")) as PlanterAsset;
+      const current = await readStoredAsset(id);
       if (current.status === "processing" && current.job?.id === asset.job?.id) {
         current.status = "error";
         current.error = "Extraction was interrupted or timed out. Check existing results before explicitly retrying; no automatic paid retry was made.";
@@ -60,6 +103,11 @@ export async function readAsset(id: string): Promise<PlanterAsset> {
 }
 
 export async function listAssets() {
+  if (storageConfigured()) {
+    const { data, error } = await storageClient().from("planters").select("id").order("created_at", { ascending: false });
+    if (error) throw new PlanterError(`Planter library could not be loaded: ${error.message}`, 502);
+    return Promise.all(data.map(row => readAsset(row.id)));
+  }
   await mkdir(outputRoot(), { recursive: true });
   const entries = await readdir(outputRoot(), { withFileTypes: true });
   const results = await Promise.all(entries.filter(e => e.isDirectory() && /^[a-f0-9-]{36}$/.test(e.name)).map(async e => {
@@ -76,9 +124,7 @@ export async function createAsset(bytes: Buffer, originalFilename: string, name:
     createdAt: now, updatedAt: now, originalFilename: path.basename(originalFilename).slice(0, 200), originalFile: `original.${source.extension}`,
     source: { width: source.width, height: source.height }, status: "uploaded", revisions: [],
   };
-  const dir = assetDirectory(asset.id);
-  await mkdir(dir, { recursive: true });
-  await Promise.all([writeFile(path.join(dir, asset.originalFile), bytes), writeFile(path.join(dir, "source.png"), source.data)]);
+  await Promise.all([writeAssetFile(asset.id, asset.originalFile, bytes), writeAssetFile(asset.id, "source.png", source.data)]);
   await writeAsset(asset);
   return asset;
 }
@@ -120,22 +166,39 @@ export async function updateAsset(id: string, value: unknown) {
 }
 
 async function exportApproved(asset: PlanterAsset, revision: PlanterRevision) {
-  const dir = assetDirectory(asset.id);
   await Promise.all([
-    copyFile(path.join(dir, revisionFile(revision.id)), path.join(dir, "planter.png")),
-    copyFile(path.join(dir, revisionFile(revision.id, "mask")), path.join(dir, "mask.png")),
+    writeAssetFile(asset.id, "planter.png", await readAssetFile(asset.id, revisionFile(revision.id)), true),
+    writeAssetFile(asset.id, "mask.png", await readAssetFile(asset.id, revisionFile(revision.id, "mask")), true),
   ]);
-  await writeFile(path.join(dir, "placement.json"), JSON.stringify({
+  await writeAssetFile(asset.id, "placement.json", JSON.stringify(placementData(asset, revision), null, 2), true);
+}
+
+function placementData(asset: PlanterAsset, revision: PlanterRevision) {
+  return {
     name: asset.name, revisionId: revision.id, width: revision.width, height: revision.height,
     contactPoint: revision.contactPoint, physicalHeightMetres: null,
     reconstructed: revision.settings.mode === "reconstruct", kind: revision.kind,
     model: revision.model, sourceFilename: asset.originalFilename,
-  }, null, 2));
+  };
 }
 
-export async function assetFile(id: string, filename: string) {
+export async function resolveAssetFile(id: string, filename: string) {
   const asset = await readAsset(id);
   const allowed = ["source.png", asset.originalFile, "asset.json", ...(asset.approvedRevisionId ? ["planter.png", "mask.png", "placement.json"] : []), ...asset.revisions.flatMap(r => [revisionFile(r.id), revisionFile(r.id, "mask"), revisionFile(r.id, "raw")])];
   if (!allowed.includes(filename)) throw new PlanterError("File not found.", 404);
-  return readFile(path.join(assetDirectory(id), filename));
+  const resolved = storageConfigured() && asset.approvedRevisionId && ["planter.png", "mask.png"].includes(filename)
+    ? revisionFile(asset.approvedRevisionId, filename === "mask.png" ? "mask" : "asset") : filename;
+  return { asset, filename: resolved, key: fileKey(id, resolved) };
+}
+
+export async function assetFile(id: string, filename: string) {
+  const resolved = await resolveAssetFile(id, filename);
+  const asset = resolved.asset;
+  if (filename === "asset.json") return Buffer.from(JSON.stringify(asset, null, 2));
+  // Database metadata is authoritative if two cloud sessions race to approve.
+  if (filename === "placement.json" && storageConfigured()) {
+    const revision = asset.revisions.find(r => r.id === asset.approvedRevisionId)!;
+    return Buffer.from(JSON.stringify(placementData(asset, revision), null, 2));
+  }
+  return readAssetFile(id, resolved.filename);
 }

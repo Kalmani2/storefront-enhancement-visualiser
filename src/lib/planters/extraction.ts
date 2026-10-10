@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import sharp from "sharp";
 import { prepareCutout } from "./images";
-import { assetDirectory, locked, readAsset, readStoredAsset, runtime, writeAsset } from "./store";
+import { locked, readAsset, readStoredAsset, readAssetFile, writeAssetFile, runtime, writeAsset } from "./store";
 import { revisionFile, type ExtractionSettings, type PlanterRevision } from "./types";
 import { extractionPrompt, PlanterError } from "./validation";
 
@@ -26,7 +24,7 @@ export async function queueExtraction(id: string, settings: ExtractionSettings) 
 }
 
 async function requestExtraction(id: string, settings: ExtractionSettings) {
-  const source = await readFile(path.join(assetDirectory(id), "source.png"));
+  const source = await readAssetFile(id, "source.png");
   const form = new FormData();
   const model = imageModel();
   form.set("model", model);
@@ -47,7 +45,7 @@ async function requestExtraction(id: string, settings: ExtractionSettings) {
   }
   const response = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, body: form,
-    signal: AbortSignal.timeout(360_000),
+    signal: AbortSignal.timeout(process.env.VERCEL === "1" ? 220_000 : 360_000),
   });
   const payload = await response.json() as { data?: { b64_json?: string }[]; usage?: unknown; error?: { message?: string } };
   if (!response.ok) throw new PlanterError(`OpenAI image edit failed (${response.status}): ${payload.error?.message || "Please check your image-model access and API credit."}`, 502);
@@ -57,14 +55,14 @@ async function requestExtraction(id: string, settings: ExtractionSettings) {
 }
 
 export async function runExtraction(id: string, jobId: string) {
-  const attemptFile = path.join(assetDirectory(id), `attempt-${jobId}.json`);
+  const attemptFile = `attempt-${jobId}.json`;
   try {
     const asset = await readAsset(id);
     if (asset.job?.id !== jobId || asset.status !== "processing") return;
     const settings: ExtractionSettings = { ...asset.job.settings, quality: "medium" };
-    await writeFile(attemptFile, JSON.stringify({ jobId, startedAt: asset.job.startedAt, model: imageModel(), settings, prompt: extractionPrompt(settings), status: "processing" }, null, 2));
+    await writeAssetFile(id, attemptFile, JSON.stringify({ jobId, startedAt: asset.job.startedAt, model: imageModel(), settings, prompt: extractionPrompt(settings), status: "processing" }, null, 2));
     const result = await requestExtraction(id, settings);
-    await writeFile(path.join(assetDirectory(id), `attempt-${jobId}-raw.png`), result.raw);
+    await writeAssetFile(id, `attempt-${jobId}-raw.png`, result.raw);
     const processed = await prepareCutout(result.raw);
     const revision: PlanterRevision = {
       id: randomUUID(), createdAt: new Date().toISOString(), kind: "ai", settings,
@@ -83,10 +81,10 @@ export async function runExtraction(id: string, jobId: string) {
       delete current.error;
       await writeAsset(current);
     });
-    await writeFile(attemptFile, JSON.stringify({ jobId, revisionId: revision.id, model: result.model, settings, prompt: revision.prompt, status: "complete", usage: result.usage }, null, 2));
+    await writeAssetFile(id, attemptFile, JSON.stringify({ jobId, revisionId: revision.id, model: result.model, settings, prompt: revision.prompt, status: "complete", usage: result.usage }, null, 2), true);
   } catch (error) {
-    const attempt = JSON.parse(await readFile(attemptFile, "utf8").catch(() => "{}"));
-    await writeFile(attemptFile, JSON.stringify({ ...attempt, status: "error", error: error instanceof Error ? error.message : "Extraction failed.", finishedAt: new Date().toISOString() }, null, 2));
+    const attempt = JSON.parse((await readAssetFile(id, attemptFile).catch(() => Buffer.from("{}"))).toString());
+    await writeAssetFile(id, attemptFile, JSON.stringify({ ...attempt, status: "error", error: error instanceof Error ? error.message : "Extraction failed.", finishedAt: new Date().toISOString() }, null, 2), true).catch(() => {});
     await locked(id, async () => {
       const current = await readStoredAsset(id);
       if (current.job?.id !== jobId) return;
@@ -101,11 +99,10 @@ export async function runExtraction(id: string, jobId: string) {
 }
 
 async function saveRevisionFiles(id: string, revisionId: string, png: Buffer, mask: Buffer, raw: Buffer) {
-  const dir = assetDirectory(id);
   await Promise.all([
-    writeFile(path.join(dir, revisionFile(revisionId)), png),
-    writeFile(path.join(dir, revisionFile(revisionId, "mask")), mask),
-    writeFile(path.join(dir, revisionFile(revisionId, "raw")), raw),
+    writeAssetFile(id, revisionFile(revisionId), png),
+    writeAssetFile(id, revisionFile(revisionId, "mask"), mask),
+    writeAssetFile(id, revisionFile(revisionId, "raw"), raw),
   ]);
 }
 

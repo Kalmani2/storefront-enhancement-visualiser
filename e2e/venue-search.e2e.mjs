@@ -6,6 +6,16 @@ test("direct lookup, prospect mode, group loading, framing and project saving", 
   const cameras = [0, 1].map(index => ({ panoId: `camera-${index}`, token: `signed-${index}`, latitude: 51.514, longitude: -0.133, distanceMetres: 15, heading: 90, fov: 65, pitch: -5, copyright: "© Google", date: "2026-01" }));
   const jpeg = await sharp({ create: { width: 640, height: 420, channels: 3, background: "#a9b9a0" } }).jpeg().toBuffer();
   const queries = [], imageCalls = [], errors = [];
+  const projects = [];
+  await page.route("**/api/projects", route => {
+    if (route.request().method() === "POST") {
+      const { project } = route.request().postDataJSON();
+      const index = projects.findIndex(item => item.id === project.id);
+      if (index < 0) projects.push(project); else projects[index] = project;
+      return route.fulfill({ json: project });
+    }
+    return route.fulfill({ json: projects });
+  });
   page.on("pageerror", error => errors.push(error.message));
   page.on("dialog", dialog => dialog.accept());
   await page.route("**/api/google/**", async route => {
@@ -48,8 +58,8 @@ test("direct lookup, prospect mode, group loading, framing and project saving", 
   await page.getByLabel("Project name").fill("Frith Street proposal");
   await page.getByRole("button", { name: "Save project to library" }).click();
   await expect(page).toHaveURL("/");
-  const projects = await page.evaluate(() => JSON.parse(localStorage.getItem("storefront-visualiser-projects-v2")));
   expect(projects[0]).toMatchObject({ title: "Frith Street proposal", venueId: venue.placeId, image: { panoId: "camera-1", fov: 45 } });
+  expect(await page.evaluate(() => localStorage.getItem("storefront-visualiser-projects-v2"))).toBeNull();
   await page.goto("/google");
   await page.getByRole("button", { name: "Find prospects", exact: true }).last().click();
   await expect(page.getByRole("heading", { name: "20 places found" })).toBeVisible();

@@ -20,6 +20,7 @@ export function PlanterEdgeEditor({ src, onClose, onSave }: { src: string; onClo
   useEffect(() => {
     dialogRef.current?.showModal();
     const image = new Image();
+    image.crossOrigin = "anonymous";
     let active = true;
     image.onload = () => {
       if (!active || !canvasRef.current) return;

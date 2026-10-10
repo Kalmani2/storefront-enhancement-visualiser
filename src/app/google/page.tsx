@@ -52,21 +52,22 @@ export default function GoogleDiscovery() {
     finally { setSearching(false); }
   }
 
-  function createProject() {
+  async function createProject() {
     if (!selected) return;
     const title = projectTitle.trim();
     if (!title) { setProjectError("Enter a project name."); return; }
     if (!frame) { setProjectError("Load the views and choose an image first."); return; }
-    const id = `google-${selected.placeId}`, existing = findProject(id);
-    const project: Project = {
-      id, title, source: "google", venueId: selected.placeId,
-      sourceUrl: `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(selected.placeId)}`,
-      createdAt: existing?.createdAt ?? new Date().toISOString(),
-      image: { provider: "google-street-view", panoId: frame.candidate.panoId, headingOffset: frame.offset, fov: frame.fov, captureDate: frame.candidate.date },
-      configuration: existing?.configuration,
-    };
-    try { saveProject(project); router.push("/"); }
-    catch { setProjectError("This browser could not save the project. Check whether local storage is available."); }
+    try {
+      const id = `google-${selected.placeId}`, existing = await findProject(id);
+      const project: Project = {
+        id, title, source: "google", venueId: selected.placeId,
+        sourceUrl: `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(selected.placeId)}`,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+        image: { provider: "google-street-view", panoId: frame.candidate.panoId, headingOffset: frame.offset, fov: frame.fov, captureDate: frame.candidate.date },
+        configuration: existing?.configuration,
+      };
+      await saveProject(project); router.push("/");
+    } catch (cause) { setProjectError(cause instanceof Error ? cause.message : "The project could not be saved to Supabase."); }
   }
 
   const hasResults = Boolean(results);

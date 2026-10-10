@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import sharp from "sharp";
 
 test("upload, select, generate, brush-edit, approve and download an asset", async ({ page }) => {
+  await page.route("**/api/projects", route => route.fulfill({ json: [] }));
   const id = "11111111-1111-4111-8111-111111111111";
   const source = await sharp({ create: { width: 160, height: 240, channels: 3, background: "#c1c5b2" } }).png().toBuffer();
   const png = await sharp({ create: { width: 160, height: 240, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite([{ input: Buffer.from('<svg width="160" height="240"><rect x="45" y="110" width="70" height="100" fill="#9b856a"/><circle cx="80" cy="75" r="45" fill="#5c875b"/></svg>') }]).png().toBuffer();

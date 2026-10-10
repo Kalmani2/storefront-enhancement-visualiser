@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "import:planters": "node scripts/import-planters.mjs",
     "check": "npm run lint && npm test && npm run build"
   },
   "dependencies": {

@@ -1,0 +1,68 @@
+import { randomUUID } from "node:crypto";
+import type { Project } from "./projects";
+import { storageClient, putFile } from "./storage";
+import { PlanterError } from "./planters/validation";
+import { normaliseSource } from "./planters/images";
+
+export function projectId(value: string) {
+  if (!/^[a-zA-Z0-9_-]{1,220}$/.test(value)) throw new PlanterError("Invalid project ID.");
+  return value;
+}
+
+export function parseProject(value: unknown): Project {
+  if (!value || typeof value !== "object") throw new PlanterError("Project details are required.");
+  const p = value as Project;
+  if (typeof p.id !== "string" || typeof p.title !== "string" || !p.title.trim() || p.title.length > 160 || typeof p.venueId !== "string" || p.venueId.length > 220 || !["google", "openstreetmap"].includes(p.source) || !Number.isFinite(Date.parse(p.createdAt))) throw new PlanterError("Invalid project details.");
+  projectId(p.id);
+  if (typeof p.sourceUrl !== "string" || !/^https:\/\//.test(p.sourceUrl) || p.sourceUrl.length > 2000) throw new PlanterError("Invalid venue source link.");
+  for (const field of [p.address, p.category]) if (field !== undefined && (typeof field !== "string" || field.length > 1000)) throw new PlanterError("Invalid venue information.");
+  if (p.configuration && (!["classic", "trough", "cylinder"].includes(p.configuration.planter) || !Number.isInteger(p.configuration.quantity) || p.configuration.quantity < 1 || p.configuration.quantity > 4 || !["left", "right", "both"].includes(p.configuration.placement))) throw new PlanterError("Invalid planter configuration.");
+  if (p.image) {
+    const image = p.image;
+    if (image.provider === "google-street-view") {
+      if (typeof image.panoId !== "string" || image.panoId.length > 300 || !Number.isFinite(image.headingOffset) || (image.fov !== undefined && (!Number.isFinite(image.fov) || image.fov < 10 || image.fov > 120))) throw new PlanterError("Invalid Street View framing.");
+    } else if (image.provider === "mapillary") {
+      if (![image.imageId, image.url, image.sourceUrl, image.creator].every(v => typeof v === "string" && v.length <= 4000) || !image.url.startsWith("https://") || !image.sourceUrl.startsWith("https://")) throw new PlanterError("Invalid image reference.");
+    } else if (image.provider === "uploaded") {
+      if (typeof image.storagePath !== "string" || !image.storagePath.startsWith(`storefronts/${p.id}/`) || image.storagePath.includes("..") || typeof image.originalFilename !== "string" || !Number.isFinite(image.width) || !Number.isFinite(image.height)) throw new PlanterError("Invalid saved image.");
+    } else throw new PlanterError("Unknown image provider.");
+  }
+  // Explicit fields prevent untrusted request data being persisted accidentally.
+  return { id: p.id, title: p.title.trim(), venueId: p.venueId, source: p.source, sourceUrl: p.sourceUrl, createdAt: p.createdAt, address: p.address, category: p.category, image: p.image, configuration: p.configuration };
+}
+
+export async function listProjects(): Promise<Project[]> {
+  const { data, error } = await storageClient().from("projects").select("data").order("created_at", { ascending: false });
+  if (error) throw new PlanterError("The saved project library could not be loaded.", 502);
+  return data.map(row => row.data as Project);
+}
+
+export async function getProject(id: string): Promise<Project> {
+  const { data, error } = await storageClient().from("projects").select("data").eq("id", projectId(id)).maybeSingle();
+  if (error) throw new PlanterError("The project could not be loaded.", 502);
+  if (!data) throw new PlanterError("Project not found.", 404);
+  return data.data as Project;
+}
+
+export async function storeProject(project: Project, migration = false) {
+  project = parseProject(project);
+  if (project.image?.provider === "uploaded") {
+    const existing = await getProject(project.id);
+    if (existing.image?.provider !== "uploaded" || existing.image.storagePath !== project.image.storagePath) throw new PlanterError("Upload frontage images through the project's image endpoint.");
+  }
+  const { data, error } = await storageClient().from("projects").upsert({ id: project.id, title: project.title, data: project, created_at: project.createdAt, updated_at: new Date().toISOString() }, { onConflict: "id", ignoreDuplicates: migration }).select("data").maybeSingle();
+  if (error) throw new PlanterError("The project could not be saved.", 502);
+  return data ? data.data as Project : getProject(project.id);
+}
+
+export async function storeFrontage(id: string, bytes: Buffer, originalFilename: string) {
+  const project = await getProject(id);
+  const source = await normaliseSource(bytes);
+  const key = `storefronts/${project.id}/${randomUUID()}.${source.extension}`;
+  // Keep uploaded originals byte-for-byte; do not silently resize the saved source.
+  await putFile(key, bytes);
+  const updated: Project = { ...project, image: { provider: "uploaded", storagePath: key, originalFilename: originalFilename.slice(0, 200), width: source.originalWidth, height: source.originalHeight } };
+  const { error } = await storageClient().from("projects").update({ data: updated, updated_at: new Date().toISOString() }).eq("id", project.id);
+  if (error) throw new PlanterError("Image uploaded, but the project could not be updated. Try again.", 502);
+  return updated;
+}
