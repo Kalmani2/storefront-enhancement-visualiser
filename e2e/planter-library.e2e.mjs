@@ -5,7 +5,7 @@ test("upload, select, generate, brush-edit, approve and download an asset", asyn
   const id = "11111111-1111-4111-8111-111111111111";
   const source = await sharp({ create: { width: 160, height: 240, channels: 3, background: "#c1c5b2" } }).png().toBuffer();
   const png = await sharp({ create: { width: 160, height: 240, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite([{ input: Buffer.from('<svg width="160" height="240"><rect x="45" y="110" width="70" height="100" fill="#9b856a"/><circle cx="80" cy="75" r="45" fill="#5c875b"/></svg>') }]).png().toBuffer();
-  const settings = { target: "", mode: "reconstruct", quality: "high" };
+  const settings = { target: "", mode: "reconstruct", quality: "medium" };
   const revision = { id: "22222222-2222-4222-8222-222222222222", createdAt: new Date().toISOString(), kind: "ai", settings, model: "mock-image-model", prompt: "test", width: 160, height: 240, contactPoint: { x: .5, y: .9 }, transparency: .6, warnings: [] };
   let asset = { id, name: "Garden pair", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), source: { width: 160, height: 240 }, originalFilename: "garden.png", originalFile: "original.png", status: "uploaded", revisions: [] };
   let generated = false;
@@ -20,6 +20,7 @@ test("upload, select, generate, brush-edit, approve and download an asset", asyn
     if (pathname.endsWith("/extract")) {
       extractRequests++;
       const body = request.postDataJSON(); selectedBox = body.selection;
+      expect(body.quality).toBe("medium");
       asset = { ...asset, status: "processing", updatedAt: new Date().toISOString(), lastSettings: body };
       generated = true;
       return route.fulfill({ status: 202, json: asset });
@@ -41,9 +42,11 @@ test("upload, select, generate, brush-edit, approve and download an asset", asyn
 
   await page.goto("/");
   await expect(page.getByRole("navigation").getByRole("link")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /Add a planter image/ })).toBeEnabled();
   await page.getByLabel("Upload planter image").setInputFiles({ name: "garden.png", mimeType: "image/png", buffer: source });
   await expect(page).toHaveURL(new RegExp(`/planters/${id}`));
   await expect(page.getByRole("heading", { name: "Garden pair" })).toBeVisible();
+  await expect(page.getByRole("option", { name: "High", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Select target area" }).click();
   const box = await page.getByAltText("Original planter photo").boundingBox();
   await page.mouse.move(box.x + box.width * .1, box.y + box.height * .1);

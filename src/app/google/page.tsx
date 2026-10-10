@@ -2,16 +2,19 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ArrowRight, Check, ExternalLink, MapPin, Search } from "lucide-react";
+import { ArrowRight, ExternalLink, MapPin, Search } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { StreetViewPicker, type StreetViewSelection } from "@/components/street-view-picker";
 import type { GoogleSearchResult, GoogleVenue } from "@/lib/google/types";
 import { findProject, saveProject, type Project } from "@/lib/projects";
 
+type SearchMode = "prospects" | "direct";
+
 export default function GoogleDiscovery() {
   const router = useRouter();
+  const [mode, setMode] = useState<SearchMode>("prospects");
   const [location, setLocation] = useState("Soho");
+  const [query, setQuery] = useState("");
   const [category, setCategory] = useState("cafe");
   const [results, setResults] = useState<GoogleSearchResult | null>(null);
   const [selected, setSelected] = useState<GoogleVenue | null>(null);
@@ -21,45 +24,40 @@ export default function GoogleDiscovery() {
   const [projectError, setProjectError] = useState("");
   const [projectTitle, setProjectTitle] = useState("");
 
+  function switchMode(next: SearchMode) {
+    if (searching || next === mode) return;
+    setMode(next); setResults(null); setSelected(null); setFrame(null);
+    setError(""); setProjectError(""); setProjectTitle("");
+  }
+
   function choose(venue: GoogleVenue) {
     if (selected?.placeId === venue.placeId) return;
-    setSelected(venue);
-    setFrame(null);
-    setProjectTitle("");
-    setProjectError("");
+    setSelected(venue); setFrame(null); setProjectTitle(venue.name); setProjectError("");
   }
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (searching) return;
-    setSearching(true);
-    setError("");
-    setResults(null);
-    setSelected(null);
-    setFrame(null);
-    setProjectError("");
+    setSearching(true); setError(""); setResults(null); setSelected(null);
+    setFrame(null); setProjectError(""); setProjectTitle("");
     try {
       const response = await fetch("/api/google/venues", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location, category }), cache: "no-store",
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mode === "direct" ? { mode, query } : { mode, location, category }), cache: "no-store",
       });
       const result = await response.json() as GoogleSearchResult & { error?: string };
       if (!response.ok) throw new Error(result.error || "Venue search failed.");
       setResults(result);
-      // Let the user choose a prospect; the first API result is not an endorsed storefront.
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Venue search failed.");
-    } finally {
-      setSearching(false);
-    }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Venue search failed."); }
+    finally { setSearching(false); }
   }
 
   function createProject() {
     if (!selected) return;
     const title = projectTitle.trim();
-    if (!title) { setProjectError("Give this project a name first."); return; }
-    if (!frame) { setProjectError("Load and choose a street view before saving this project."); return; }
-    const id = `google-${selected.placeId}`;
-    const existing = findProject(id);
+    if (!title) { setProjectError("Enter a project name."); return; }
+    if (!frame) { setProjectError("Load the views and choose an image first."); return; }
+    const id = `google-${selected.placeId}`, existing = findProject(id);
     const project: Project = {
       id, title, source: "google", venueId: selected.placeId,
       sourceUrl: `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(selected.placeId)}`,
@@ -71,49 +69,51 @@ export default function GoogleDiscovery() {
     catch { setProjectError("This browser could not save the project. Check whether local storage is available."); }
   }
 
+  const hasResults = Boolean(results);
   return <main className="min-h-screen bg-[#efeee6] text-[#23332a]">
     <AppHeader active="discover" />
-    <section className="border-b border-[#d8d9cb] bg-[#e6e7d9]">
-      <div className="mx-auto grid max-w-[1440px] gap-10 px-6 py-14 md:grid-cols-[1fr_410px] md:px-10">
-        <div>
-          <p className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-[#587460]">Venue discovery / London</p>
-          <h1 className="font-serif text-5xl leading-none tracking-[-0.035em] text-[#173c2d] md:text-[72px]">Find the frontage.<br /><em className="font-normal">Find the opportunity.</em></h1>
-          <p className="mt-6 max-w-xl text-base leading-7 text-[#5d6c5e]">Explore active hospitality venues, salons and boutiques with a physical street address. Compare nearby outdoor street views and choose an entrance for your next project.</p>
-          <Link href="/osm" className="mt-5 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-[#436b4b] hover:underline">Try OpenStreetMap / Mapillary <ArrowRight size={14} /></Link>
+    <section aria-label="Venue search" className={`relative isolate flex items-center justify-center overflow-hidden px-6 py-12 md:px-10 ${hasResults ? "min-h-[330px]" : "min-h-[calc(100svh-89px)]"}`}>
+      <div className="absolute inset-0 -z-20 bg-[#566b64] bg-[url('/london-skyline.jpg')] bg-cover bg-[center_65%]" />
+      <div className="absolute inset-0 -z-10 bg-[#102d24]/30" />
+      <h1 className="sr-only">Venue search</h1>
+      <form onSubmit={search} className="w-full max-w-[680px] border border-white/50 bg-[#faf9f2]/95 p-6 shadow-[0_20px_70px_rgba(10,30,22,0.25)] backdrop-blur-md sm:p-8">
+        <div role="group" aria-label="Search mode" className="mb-6 grid grid-cols-2 border border-[#ccd4c6] bg-[#e9ede3] p-1">
+          {([{ value: "prospects", label: "Find prospects" }, { value: "direct", label: "Search a place" }] as const).map(item => <button key={item.value} type="button" aria-pressed={mode === item.value} disabled={searching} onClick={() => switchMode(item.value)} className={`px-3 py-3 text-sm font-semibold transition-colors disabled:opacity-60 ${mode === item.value ? "bg-[#254e3b] text-white shadow-sm" : "text-[#5f7364] hover:bg-[#dce4d7]"}`}>{item.label}</button>)}
         </div>
-        <form onSubmit={search} className="self-end border border-[#cbd2c1] bg-[#f8f7ef] p-6 shadow-[0_24px_52px_rgba(31,54,34,0.09)]">
-          <label htmlFor="google-location" className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-[#3c6046]">London area</label>
-          <div className="flex items-center gap-2 border-b border-[#aebba7]"><Search size={17} className="text-[#64806b]" /><input id="google-location" value={location} onChange={(event) => setLocation(event.target.value)} className="w-full bg-transparent py-3 outline-none" placeholder="Soho or a London postcode" /></div>
-          <label htmlFor="google-category" className="mb-2 mt-5 block text-xs font-bold uppercase tracking-[0.16em] text-[#3c6046]">Business type</label>
-          <select id="google-category" value={category} onChange={(event) => setCategory(event.target.value)} className="w-full border-b border-[#aebba7] bg-transparent py-3 outline-none"><option value="cafe">Cafes</option><option value="restaurant">Restaurants</option><option value="bar">Bars & pubs</option><option value="hair salon">Hair salons</option><option value="shop">Clothing boutiques</option></select>
-          <button disabled={searching || location.trim().length < 2} className="mt-6 flex w-full items-center justify-between bg-[#204f39] px-5 py-4 text-sm font-semibold text-white disabled:opacity-60">{searching ? "Finding suitable prospects…" : "Find venue prospects"}<ArrowRight size={17} /></button>
-          <p className="mt-3 text-xs leading-5 text-[#7c8879]">Operational listings only. Known chains and internal premises are filtered out. Images load after confirmation.</p>
-        </form>
-      </div>
+        {mode === "prospects" ? <div className="grid gap-5 sm:grid-cols-2">
+          <label className="block text-xs font-semibold text-[#3c6046]" htmlFor="google-location">London area
+            <input id="google-location" required maxLength={80} value={location} onChange={event => setLocation(event.target.value)} className="mt-2 w-full border border-[#bbc8b7] bg-[#fffefa] px-3 py-3 text-sm text-[#23332a] outline-none focus:border-[#315e44]" placeholder="Neighbourhood or postcode" />
+          </label>
+          <label className="block text-xs font-semibold text-[#3c6046]" htmlFor="google-category">Business type
+            <select id="google-category" value={category} onChange={event => setCategory(event.target.value)} className="mt-2 w-full border border-[#bbc8b7] bg-[#fffefa] px-3 py-3 text-sm text-[#23332a] outline-none focus:border-[#315e44]"><option value="cafe">Cafes</option><option value="restaurant">Restaurants</option><option value="bar">Bars & pubs</option><option value="hair salon">Hair salons</option><option value="shop">Clothing boutiques</option></select>
+          </label>
+        </div> : <label htmlFor="google-query" className="block text-xs font-semibold text-[#3c6046]">London business name or address
+          <div className="mt-2 flex items-center gap-3 border border-[#bbc8b7] bg-[#fffefa] px-3 focus-within:border-[#315e44]"><Search size={17} className="shrink-0 text-[#69816b]" /><input id="google-query" required minLength={3} maxLength={200} value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 w-full bg-transparent py-3 text-sm text-[#23332a] outline-none" placeholder="e.g. 49 Frith Street, Soho" /></div>
+        </label>}
+        <button disabled={searching || (mode === "direct" ? query.trim().length < 3 : location.trim().length < 2)} className="mt-5 flex w-full items-center justify-between bg-[#204f39] px-5 py-3.5 text-sm font-semibold text-white hover:bg-[#193e2d] disabled:opacity-60">{searching ? "Searching…" : mode === "direct" ? "Find place" : "Find prospects"}<ArrowRight size={17} /></button>
+        {error && <p role="alert" className="mt-4 text-sm text-[#944d43]">{error}</p>}
+        {searching && <p role="status" className="sr-only">Searching for places</p>}
+      </form>
+      <a href="https://unsplash.com" className="absolute bottom-3 right-5 text-[10px] text-white/80 hover:text-white" target="_blank" rel="noreferrer">London · Unsplash</a>
     </section>
 
-    <section className="mx-auto max-w-[1440px] px-6 py-12 md:px-10">
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-3 border-b border-[#d3d6ca] pb-5"><div><p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#68816c]">The prospect shortlist</p><h2 className="font-serif text-4xl text-[#1e3d2e]">{results ? `${results.venues.length} venue prospects` : "Search for an opportunity."}</h2>{results && <p className="mt-3 text-sm text-[#7a887b]">{results.totalFound} listings considered in {results.location}. Independence and frontage suitability need confirmation.</p>}</div><span className="text-xs text-[#7a887b]">Google Maps · live listings</span></div>
-      {error && <div role="alert" className="mb-6 border-l-4 border-[#a5564c] bg-[#f6e9e3] px-5 py-4 text-sm text-[#6b3b37]">{error}</div>}
-      {searching && <p role="status" className="mb-6 border border-[#cbd6c4] bg-[#f5f7ee] p-5 text-sm text-[#4c7255]">Checking operating status, business type and street address…</p>}
-      {!results && !searching && <div className="grid min-h-56 place-items-center border border-dashed border-[#c5cabb] bg-[#f7f6ee] text-center"><div><MapPin className="mx-auto mb-3 text-[#77927c]" /><p className="font-serif text-2xl">Start with a London neighbourhood.</p><p className="mt-2 text-sm text-[#758277]">Choose a prospect, then compare its street camera views.</p></div></div>}
-      {results && <>
-        {results.excluded && results.excluded.length > 0 && <details className="mb-6 border border-[#d3dacb] bg-[#f6f7ee] px-5 py-4 text-sm text-[#65775f]"><summary className="cursor-pointer font-medium">{results.excluded.reduce((sum, item) => sum + item.count, 0)} listings excluded from the shortlist</summary><ul className="mt-3 space-y-1 text-xs leading-6">{results.excluded.map((item) => <li key={item.reason}>{item.count} · {item.reason}</li>)}</ul></details>}
-        <div className="grid gap-7 lg:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.5fr)]">
-          <div className="max-h-[900px] overflow-auto border border-[#d9d5c9] bg-[#f8f7f0]">
-            <div className="sticky top-0 z-10 border-b border-[#d9d5c9] bg-[#f8f7f0] px-5 py-4 text-xs font-bold uppercase tracking-[0.15em] text-[#607666]">Select a prospect · {results.venues.length}</div>
-            {results.venues.map((venue, index) => <button key={venue.placeId} type="button" onClick={() => choose(venue)} className={`flex w-full gap-4 border-b border-[#e3e2d8] px-5 py-4 text-left hover:bg-[#e9eee3] ${selected?.placeId === venue.placeId ? "bg-[#e1e9dc]" : ""}`}><span className="pt-1 text-xs text-[#83927f]">{String(index + 1).padStart(2, "0")}</span><span className="min-w-0"><span className="block font-serif text-xl text-[#233c2b]">{venue.name}</span><span className="mt-1 block text-xs leading-5 text-[#6e7a6e]">{venue.address}</span><span className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#507650]"><Check size={11} /> Listed as operational</span></span><ArrowRight size={16} className="ml-auto mt-1 shrink-0 text-[#809381]" /></button>)}
-            {results.venues.length === 0 && <p className="p-5 text-sm leading-6 text-[#6e7b69]">No listings met these criteria. Try another category or a nearby London area.</p>}
+    {results && <section aria-label="Search results" className="mx-auto max-w-[1440px] px-6 py-8 md:px-10">
+      <div className="mb-5 flex items-center justify-between gap-3"><h2 className="text-sm font-semibold text-[#36523f]">{results.venues.length} {results.venues.length === 1 ? "place" : "places"} found</h2><span className="text-xs text-[#718171]">Google Maps</span></div>
+      {results.venues.length === 0 ? <p className="border border-[#d2d9cb] bg-[#faf9f2] p-6 text-sm text-[#657662]">{mode === "direct" ? "No matching London location found. Try the business name and full street address." : "No matches found. Try another area or business type."}</p> :
+      <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.6fr)]">
+        <aside aria-label="Places" className="relative min-h-0 border border-[#d9d5c9] bg-[#f8f7f0]">
+          <div className="max-h-[360px] overflow-y-auto lg:absolute lg:inset-0 lg:max-h-none">
+            {results.venues.map((venue, index) => <button key={venue.placeId} type="button" aria-pressed={selected?.placeId === venue.placeId} onClick={() => choose(venue)} className={`flex w-full gap-3 border-b border-[#e3e2d8] px-5 py-5 text-left transition-colors hover:bg-[#e9eee3] ${selected?.placeId === venue.placeId ? "bg-[#e1e9dc] shadow-[inset_3px_0_0_#315f43]" : ""}`}><span className="pt-1 text-xs text-[#83927f]">{String(index + 1).padStart(2, "0")}</span><span className="min-w-0"><span className="block font-serif text-xl text-[#233c2b]">{venue.name}</span><span className="mt-1 block text-xs leading-5 text-[#6e7a6e]">{venue.address}</span></span><ArrowRight size={15} className="ml-auto mt-1 shrink-0 text-[#809381]" /></button>)}
           </div>
-          <div className="border border-[#d9d5c9] bg-[#f9f8f2]">
-            {selected ? <>
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#deded2] p-5"><div><p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b8d79]">{selected.category} / venue prospect</p><h3 className="font-serif text-3xl text-[#1f3129]">{selected.name}</h3><p className="mt-2 text-sm text-[#697267]">{selected.address}</p></div><a href={selected.mapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-[#1d5a42] hover:underline">View on Google Maps <ExternalLink size={12} /></a><div className="flex w-full flex-wrap gap-2">{selected.prospectReasons?.map((reason) => <span key={reason} className="border border-[#c9d7c3] bg-[#eaf0e4] px-2 py-1 text-[10px] text-[#56754f]">{reason}</span>)}</div></div>
-              <StreetViewPicker key={selected.placeId} venue={selected} onSelection={setFrame} />
-              <div className="space-y-3 border-t border-[#deded2] p-5"><label htmlFor="project-title" className="block text-xs font-bold uppercase tracking-[0.12em] text-[#526a57]">Project name</label><input id="project-title" value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} placeholder="e.g. Soho cafe concept" className="w-full border border-[#bfcbbd] bg-[#fffefa] px-3 py-3 text-sm outline-none focus:border-[#4f795a]" /><p className="text-xs leading-5 text-[#859184]">Load a view and inspect the entrance before saving. Your chosen camera and framing will be remembered.</p><button type="button" disabled={!frame} onClick={createProject} className="flex w-full items-center justify-between bg-[#204f39] px-5 py-4 text-sm font-semibold text-white hover:bg-[#193d2d] disabled:cursor-not-allowed disabled:opacity-50">Save selected view to library <ArrowRight size={17} /></button>{projectError && <p role="alert" className="text-sm text-[#9a584d]">{projectError}</p>}</div>
-            </> : <div className="grid min-h-[420px] place-items-center p-8 text-center"><div><MapPin className="mx-auto mb-4 text-[#7b9578]" size={30} /><p className="font-serif text-2xl text-[#3a583d]">Choose a venue to explore its frontage.</p><p className="mt-3 max-w-sm text-sm leading-6 text-[#7b8a75]">Each prospect passed the listing checks. Selecting one finds nearby outdoor cameras without loading image previews.</p></div></div>}
-          </div>
+        </aside>
+        <div className="min-w-0 border border-[#d9d5c9] bg-[#f9f8f2]">
+          {selected ? <>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#deded2] p-5"><div className="min-w-0"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#688069]">{selected.category}</p><h3 className="font-serif text-3xl text-[#1f3129]">{selected.name}</h3><p className="mt-2 text-sm text-[#697267]">{selected.address}</p></div><a href={selected.mapsUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-xs text-[#1d5a42] hover:underline">Google Maps <ExternalLink size={12} /></a></div>
+            <StreetViewPicker key={selected.placeId} venue={selected} onSelection={setFrame} />
+            <div className="space-y-3 border-t border-[#deded2] p-5"><label htmlFor="project-title" className="block text-xs font-semibold text-[#526a57]">Project name</label><input id="project-title" maxLength={160} value={projectTitle} onChange={event => { setProjectTitle(event.target.value); setProjectError(""); }} placeholder="Name your project" className="w-full border border-[#bfcbbd] bg-[#fffefa] px-3 py-3 text-sm outline-none focus:border-[#4f795a]" /><p className="text-xs leading-5 text-[#738171]">{frame ? "Your selected view and framing will be saved with this project." : "Load the views above, then choose an image to save."}</p><button type="button" disabled={!frame || !projectTitle.trim()} onClick={createProject} className="flex w-full items-center justify-between bg-[#204f39] px-5 py-3.5 text-sm font-semibold text-white hover:bg-[#193d2d] disabled:cursor-not-allowed disabled:opacity-50">Save project to library <ArrowRight size={17} /></button>{projectError && <p role="alert" className="text-sm text-[#9a584d]">{projectError}</p>}</div>
+          </> : <div className="grid min-h-[480px] place-items-center p-8 text-center"><div><MapPin className="mx-auto mb-4 text-[#7b9578]" size={28} /><p className="font-serif text-2xl text-[#3a583d]">Choose a place to view its frontage.</p></div></div>}
         </div>
-      </>}
-    </section>
+      </div>}
+    </section>}
   </main>;
 }

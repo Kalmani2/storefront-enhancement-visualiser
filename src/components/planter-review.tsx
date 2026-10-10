@@ -8,7 +8,7 @@ import { ArrowLeft, Check, Crosshair, Download, LoaderCircle, Pencil, Sparkles }
 import { AppHeader } from "./app-header";
 import { PlanterSourceSelection } from "./planter-source-selection";
 import { PlanterEdgeEditor } from "./planter-edge-editor";
-import { planterFileUrl, revisionFile, type ContactPoint, type ExtractionMode, type ExtractionQuality, type PlanterAsset, type SelectionBox } from "@/lib/planters/types";
+import { planterFileUrl, revisionFile, type ContactPoint, type ExtractionMode, type PlanterAsset, type SelectionBox } from "@/lib/planters/types";
 
 async function jsonRequest<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...options });
@@ -26,7 +26,6 @@ export function PlanterReview({ id }: { id: string }) {
   const [selectedId, setSelectedId] = useState("");
   const [target, setTarget] = useState("");
   const [mode, setMode] = useState<ExtractionMode>("reconstruct");
-  const [quality, setQuality] = useState<ExtractionQuality>("medium");
   const [selection, setSelection] = useState<SelectionBox>();
   const [background, setBackground] = useState("checker");
   const [view, setView] = useState("asset");
@@ -58,7 +57,7 @@ export function PlanterReview({ id }: { id: string }) {
         }
         if (!initialised.current) {
           const settings = current.job?.settings || current.lastSettings || current.revisions.at(-1)?.settings;
-          if (settings) { setTarget(settings.target); setMode(settings.mode); setQuality(settings.quality); setSelection(settings.selection); }
+          if (settings) { setTarget(settings.target); setMode(settings.mode); setSelection(settings.selection); }
           setName(current.name);
           initialised.current = true;
         }
@@ -87,7 +86,7 @@ export function PlanterReview({ id }: { id: string }) {
     if (busy) return;
     setSaving(true); setError(""); setContact(null);
     try {
-      applyAsset(await jsonRequest<PlanterAsset>(`/api/planters/${id}/extract`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target, mode, quality, selection }) }));
+      applyAsset(await jsonRequest<PlanterAsset>(`/api/planters/${id}/extract`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target, mode, quality: "medium", selection }) }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not start extraction."); }
     finally { setSaving(false); }
   }
@@ -136,7 +135,7 @@ export function PlanterReview({ id }: { id: string }) {
             <label htmlFor="planter-name" className="mb-2 block text-xs font-semibold text-[#5c765f]">Asset name</label><div className="mb-5 flex gap-2"><input id="planter-name" maxLength={120} value={name} onChange={event => setName(event.target.value)} className={field} /><button type="button" disabled={busy || !name.trim() || name === asset.name} onClick={() => void update({ name })} className="border border-[#aebfa7] px-4 text-xs font-semibold text-[#41694a] disabled:opacity-40">Save</button></div>
             <label htmlFor="planter-target" className="mb-2 block text-xs font-semibold text-[#5c765f]">Which arrangement should we extract?</label><textarea id="planter-target" rows={3} maxLength={1500} disabled={Boolean(busy)} value={target} onChange={event => setTarget(event.target.value)} placeholder="e.g. The two rust-coloured containers in the foreground, with the palm and flowers. Exclude the trough behind them." className={`${field} resize-y`} /><p className="mt-2 text-xs leading-5 text-[#7c8a79]">Leave blank to use the main foreground arrangement. Plants and containers stay together.</p>
             <fieldset className="mt-5"><legend className="mb-2 text-xs font-semibold text-[#5c765f]">Method</legend><div className="grid gap-2 sm:grid-cols-2">{([{ value: "extract", title: "Extract visible", description: "Keep visible shape; missing areas stay missing." }, { value: "reconstruct", title: "Complete hidden parts", description: "AI fills occluded foliage and cropped containers." }] as const).map(option => <label key={option.value} className={`cursor-pointer border p-3 ${mode === option.value ? "border-[#577d5c] bg-[#eaf0e5]" : "border-[#d3dccd]"}`}><span className="flex items-center gap-2 text-sm font-semibold text-[#3f6248]"><input type="radio" name="method" disabled={Boolean(busy)} checked={mode === option.value} onChange={() => setMode(option.value)} />{option.title}</span><span className="mt-2 block text-xs leading-5 text-[#7c8a79]">{option.description}</span></label>)}</div></fieldset>
-            <div className="mt-5 flex items-center justify-between gap-4"><label className="flex items-center gap-3 text-xs font-semibold text-[#5c765f]">Quality<select disabled={Boolean(busy)} value={quality} onChange={event => setQuality(event.target.value as ExtractionQuality)} className="border border-[#c8d2c2] bg-[#fffef9] px-3 py-2 text-sm"><option value="medium">Medium</option><option value="high">High</option></select></label><span className="text-[11px] text-[#85917f]">{model}</span></div>
+            <p className="mt-5 text-[11px] text-[#85917f]">Medium quality · {model}</p>
             <button type="button" onClick={() => void extract()} disabled={Boolean(busy) || configured !== true} className="mt-5 flex w-full items-center justify-between gap-3 bg-[#28543b] px-5 py-4 text-sm font-semibold text-white hover:bg-[#1c422d] disabled:cursor-not-allowed disabled:opacity-50"><span>{processing ? "Extracting your arrangement…" : saving ? "Saving…" : asset.revisions.length ? "Generate another result · paid" : "Extract planter asset · paid"}</span>{busy ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}</button>
             <p className="mt-3 text-xs leading-5 text-[#81907d]">One paid image edit per click. Uploading, reviewing, brush edits and downloads are free. Hidden parts are estimates.</p>
           </div>

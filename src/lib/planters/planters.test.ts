@@ -15,7 +15,7 @@ const cacheRoot = path.resolve(workspace, ".cache");
 let temporary: string;
 let source: Buffer;
 let cutout: Buffer;
-const settings: ExtractionSettings = { target: "Foreground pair with all its plants", mode: "reconstruct", quality: "high" };
+const settings: ExtractionSettings = { target: "Foreground pair with all its plants", mode: "reconstruct", quality: "medium" };
 
 beforeEach(async () => {
   await mkdir(cacheRoot, { recursive: true });
@@ -69,6 +69,7 @@ describe("planter extraction and durable review", () => {
     const form = request[1]!.body as FormData;
     expect(form.getAll("image[]")).toHaveLength(2);
     expect(form.get("background")).toBe("transparent");
+    expect(form.get("quality")).toBe("medium");
     expect(form.get("input_fidelity")).toBe("high");
     const revision = reviewed.revisions[0];
     const approved = await updateAsset(asset.id, { approvedRevisionId: revision.id, contactPoint: { x: 0.4, y: 0.9 } });
@@ -136,7 +137,8 @@ describe("planter extraction and durable review", () => {
 describe("selection and local request validation", () => {
   it("rejects coordinates outside the original photo", () => {
     expect(() => parseSettings({ ...settings, selection: { x: 0.8, y: 0, width: 0.5, height: 0.5 } })).toThrow("within the image");
-    expect(() => parseSettings({ ...settings, quality: "max" })).toThrow("medium or high");
+    expect(() => parseSettings({ ...settings, quality: "high" })).toThrow("Only medium");
+    expect(() => parseSettings({ ...settings, quality: "max" })).toThrow("Only medium");
     expect(extractionPrompt({ ...settings, mode: "extract" })).toContain("Do not redesign");
     expect(extractionPrompt(settings)).toContain("Reconstruct portions");
   });

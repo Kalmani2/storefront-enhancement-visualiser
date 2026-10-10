@@ -62,6 +62,32 @@ export async function searchGoogleVenues(location: string, category: GoogleCateg
   };
 }
 
+// Explicit lookup intentionally bypasses prospect category/chain screening.
+export async function searchGoogleLocation(query: string): Promise<GoogleSearchResult> {
+  const places = await textSearch({
+    textQuery: /london/i.test(query) ? query : `${query}, London`,
+    includePureServiceAreaBusinesses: false, pageSize: 5,
+    locationBias: { rectangle: { low: { latitude: londonBounds.south, longitude: londonBounds.west }, high: { latitude: londonBounds.north, longitude: londonBounds.east } } },
+  }, placeFields.split(",").map((field) => `places.${field}`).join(","));
+  const venues: GoogleVenue[] = [];
+  const ids = new Set<string>();
+  for (const place of places) {
+    const latitude = place.location?.latitude, longitude = place.location?.longitude;
+    if (!place.id || ids.has(place.id) || !place.formattedAddress || latitude === undefined || longitude === undefined
+      || !inBounds(latitude, longitude, londonBounds) || place.pureServiceAreaBusiness) continue;
+    ids.add(place.id);
+    venues.push({
+      placeId: place.id, name: place.displayName?.text || place.formattedAddress,
+      address: place.formattedAddress, latitude, longitude,
+      category: place.primaryType?.replaceAll("_", " ") || "Address", primaryType: place.primaryType,
+      streetName: place.addressComponents?.find(component => component.types?.includes("route"))?.longText,
+      businessStatus: place.businessStatus === "OPERATIONAL" ? "OPERATIONAL" : undefined,
+      mapsUrl: place.googleMapsUri || `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(place.id)}`,
+    });
+  }
+  return { location: query, category: "direct", venues, totalFound: places.length };
+}
+
 export async function getGoogleVenue(placeId: string): Promise<GoogleVenue> {
   const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
     headers: { "X-Goog-Api-Key": googleApiKey(), "X-Goog-FieldMask": placeFields },
@@ -69,14 +95,13 @@ export async function getGoogleVenue(placeId: string): Promise<GoogleVenue> {
   });
   const place = await response.json() as GooglePlace & { error?: { message?: string } };
   if (!response.ok) throw new Error(`Google Place Details failed (${response.status}): ${place.error?.message ?? "unknown error"}`);
-  if (!place.id || !place.displayName?.text || place.location?.latitude === undefined || place.location.longitude === undefined) throw new Error("Google returned incomplete venue details.");
-  if (place.businessStatus !== "OPERATIONAL") throw new Error("This venue is no longer listed as operational. Choose another prospect.");
+  if (!place.id || !(place.displayName?.text || place.formattedAddress) || place.location?.latitude === undefined || place.location.longitude === undefined) throw new Error("Google returned incomplete venue details.");
   return {
-    placeId: place.id, name: place.displayName.text, address: place.formattedAddress || "Address unavailable",
+    placeId: place.id, name: place.displayName?.text || place.formattedAddress!, address: place.formattedAddress || "Address unavailable",
     latitude: place.location.latitude, longitude: place.location.longitude,
     category: place.primaryType?.replaceAll("_", " ") || "Venue", primaryType: place.primaryType,
     streetName: place.addressComponents?.find((component) => component.types?.includes("route"))?.longText,
-    businessStatus: "OPERATIONAL",
+    businessStatus: place.businessStatus === "OPERATIONAL" ? "OPERATIONAL" : undefined,
     mapsUrl: place.googleMapsUri || `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(place.id)}`,
   };
 }

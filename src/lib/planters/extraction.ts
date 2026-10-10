@@ -33,7 +33,7 @@ async function requestExtraction(id: string, settings: ExtractionSettings) {
   form.set("prompt", extractionPrompt(settings));
   form.set("background", "transparent");
   form.set("output_format", "png");
-  form.set("quality", settings.quality);
+  form.set("quality", "medium");
   form.set("size", "1024x1536");
   form.set("n", "1");
   if (model === "gpt-image-1.5" || model === "gpt-image-1") form.set("input_fidelity", "high");
@@ -61,7 +61,7 @@ export async function runExtraction(id: string, jobId: string) {
   try {
     const asset = await readAsset(id);
     if (asset.job?.id !== jobId || asset.status !== "processing") return;
-    const settings = asset.job.settings;
+    const settings: ExtractionSettings = { ...asset.job.settings, quality: "medium" };
     await writeFile(attemptFile, JSON.stringify({ jobId, startedAt: asset.job.startedAt, model: imageModel(), settings, prompt: extractionPrompt(settings), status: "processing" }, null, 2));
     const result = await requestExtraction(id, settings);
     await writeFile(path.join(assetDirectory(id), `attempt-${jobId}-raw.png`), result.raw);

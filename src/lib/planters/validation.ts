@@ -13,7 +13,7 @@ export function parseSettings(value: unknown): ExtractionSettings {
   if (!value || typeof value !== "object") throw new PlanterError("Extraction settings are required.");
   const v = value as Record<string, unknown>;
   if (v.mode !== "extract" && v.mode !== "reconstruct") throw new PlanterError("Choose an extraction mode.");
-  if (v.quality !== "medium" && v.quality !== "high") throw new PlanterError("Choose medium or high quality.");
+  if (v.quality !== undefined && v.quality !== "medium") throw new PlanterError("Only medium quality is available.");
   if (typeof v.target !== "string" || v.target.length > 1500) throw new PlanterError("Describe the planter in 1,500 characters or fewer.");
   let selection: SelectionBox | undefined;
   if (v.selection !== undefined) {
@@ -22,7 +22,7 @@ export function parseSettings(value: unknown): ExtractionSettings {
     if (![b.x, b.y, b.width, b.height].every(Number.isFinite) || b.x < 0 || b.y < 0 || b.width < 0.02 || b.height < 0.02 || b.x + b.width > 1.001 || b.y + b.height > 1.001) throw new PlanterError("Select a larger area within the image.");
     selection = { x: b.x, y: b.y, width: Math.min(b.width, 1 - b.x), height: Math.min(b.height, 1 - b.y) };
   }
-  return { mode: v.mode, quality: v.quality, target: v.target.trim(), selection };
+  return { mode: v.mode, quality: "medium", target: v.target.trim(), selection };
 }
 
 export function extractionPrompt(settings: ExtractionSettings) {

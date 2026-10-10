@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, FolderOpen, Search, Sprout } from "lucide-react";
+import { FolderOpen, Search, Sprout } from "lucide-react";
 
 type Section = "library" | "discover";
 
@@ -18,7 +18,6 @@ export function AppHeader({ active }: { active: Section }) {
       <nav aria-label="Primary navigation" className="flex items-center gap-1 rounded-sm border border-[#d6dbd0] bg-[#f0f1e8] p-1">
         {items.map(({ href, label, icon: Icon, section }) => <Link key={section} href={href} aria-current={active === section ? "page" : undefined} className={`flex items-center gap-2 rounded-[2px] px-3 py-2.5 text-xs font-semibold transition-colors sm:px-4 ${active === section ? "bg-[#254e3b] text-white shadow-sm" : "text-[#667568] hover:bg-[#e1e8dc] hover:text-[#284d38]"}`}><Icon size={15} strokeWidth={1.9} /><span>{label}</span></Link>)}
       </nav>
-      <span className="hidden items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7e8d7e] lg:flex">London pilot <ArrowUpRight size={13} /></span>
     </div>
   </header>;
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getStreetViewMetadata, loadStreetViewImage, searchGoogleVenues } from "./provider";
+import { getGoogleVenue, getStreetViewMetadata, loadStreetViewImage, searchGoogleLocation, searchGoogleVenues } from "./provider";
 import { hasGoogleAttribution, readFrame } from "./streetview";
 import { screenProspect, sohoBounds, type GooglePlace } from "./prospects";
 import type { GoogleVenue } from "./types";
@@ -23,6 +23,28 @@ const json = (value: unknown) => new Response(JSON.stringify(value), { status: 2
 describe("Google venue and camera selection", () => {
   beforeEach(() => { vi.stubEnv("GOOGLE_MAPS_API_KEY", "test-key"); });
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  it("searches an explicit address in one request without prospect filters", async () => {
+    const chain = { ...place, id: "chain-place", displayName: { text: "Starbucks Soho" } };
+    const address = { ...place, id: "address-place", displayName: undefined, primaryType: "street_address", businessStatus: undefined };
+    const fetchMock = vi.fn().mockResolvedValue(json({ places: [chain, address, chain, { ...place, id: "outside", location: { latitude: 53, longitude: -1 } }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await searchGoogleLocation("49 Frith Street");
+    expect(result.venues.map(item => item.placeId)).toEqual(["chain-place", "address-place"]);
+    expect(result.venues[1].name).toBe(place.formattedAddress);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toMatchObject({ textQuery: "49 Frith Street, London", pageSize: 5 });
+    expect(body).not.toHaveProperty("includedType");
+    expect(body).not.toHaveProperty("strictTypeFiltering");
+  });
+
+  it("can reopen a saved street address without requiring business operating status", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ ...place, displayName: undefined, businessStatus: undefined })));
+    const result = await getGoogleVenue(venue.placeId);
+    expect(result.name).toBe(place.formattedAddress);
+    expect(result.businessStatus).toBeUndefined();
+  });
 
   it("uses strict category and area restrictions with Pro fields, then excludes closed and chain listings", async () => {
     const fetchMock = vi.fn().mockResolvedValue(json({ places: [place, { ...place, id: "closed", businessStatus: "CLOSED_PERMANENTLY" }, { ...place, id: "chain", displayName: { text: "Starbucks Soho" } }] }));

@@ -1,5 +1,5 @@
 export type ExtractionMode = "extract" | "reconstruct";
-export type ExtractionQuality = "medium" | "high";
+export type ExtractionQuality = "medium";
 export type SelectionBox = { x: number; y: number; width: number; height: number };
 export type ContactPoint = { x: number; y: number };
 
