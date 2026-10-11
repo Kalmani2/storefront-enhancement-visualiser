@@ -11,6 +11,7 @@ import { findProject, saveProject, type Project } from "@/lib/projects";
 export function VenueSearch() {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [results, setResults] = useState<GoogleSearchResult | null>(null);
   const [selected, setSelected] = useState<GoogleVenue | null>(null);
   const [frame, setFrame] = useState<StreetViewSelection | null>(null);
@@ -18,6 +19,7 @@ export function VenueSearch() {
   const [projectError, setProjectError] = useState(""), [projectTitle, setProjectTitle] = useState("");
   const [savingProject, setSavingProject] = useState(false);
   const discovery = useRef<FrontageDiscoveryHandle>(null);
+  const expanded = searchFocused || Boolean(query || results || error || searching);
 
   function choose(venue: GoogleVenue) {
     if (selected?.placeId === venue.placeId) return;
@@ -60,15 +62,15 @@ export function VenueSearch() {
   }
 
   return <>
-    <section id="venue-search" aria-label="Venue search" className="border-b border-[#d6d9cc] bg-[#e5e8dc]">
-      <div className="mx-auto max-w-[1440px] px-6 py-8 md:px-10">
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#698168]">Real places. Better entrances.</p>
-        <h1 className="font-serif text-4xl tracking-tight text-[#244533]">Venue search</h1>
-        <form onSubmit={search} className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <label className="flex flex-1 items-center gap-3 border border-[#b5c3ae] bg-[#fffef8] px-4 focus-within:border-[#315e44]"><Search size={19} className="shrink-0 text-[#6c8268]" /><span className="sr-only">Search</span><input required minLength={3} maxLength={200} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search a London business or street address" className="min-w-0 w-full bg-transparent py-4 text-sm outline-none" /></label>
-          <button disabled={searching || query.trim().length < 3} className="inline-flex min-w-32 items-center justify-center gap-3 bg-[#254e3b] px-6 py-3 text-sm font-semibold text-white hover:bg-[#193e2d] disabled:opacity-50">{searching ? <><LoaderCircle size={16} className="animate-spin" />Searching…</> : <>Search <ArrowRight size={16} /></>}</button>
+    <section id="venue-search" aria-label="Venue search" onFocusCapture={() => setSearchFocused(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setSearchFocused(false); }} className={`border-b border-[#d6d9cc] transition-colors duration-300 motion-reduce:transition-none ${expanded ? "bg-[#e5e8dc]" : "bg-[#f0f0e8]"}`}>
+      <div className="mx-auto max-w-[1440px] px-6 py-6 md:px-10 md:py-8">
+        <div aria-hidden={!expanded} className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+          <div className="overflow-hidden"><div className="pb-5"><h1 className="font-serif text-3xl tracking-tight text-[#244533] md:text-4xl">Venue search</h1><p className="mt-2 text-xs leading-5 text-[#687b65]">Find a specific business by name or address. For new prospects, use Discover below.</p></div></div>
+        </div>
+        <form onSubmit={search} className="flex items-center gap-2 border border-[#b5c3ae] bg-[#fffef8] p-2 pl-4 transition-[border-color,box-shadow] duration-200 focus-within:border-[#315e44] focus-within:shadow-[0_0_0_3px_rgba(49,94,68,0.08)] motion-reduce:transition-none">
+          <label className="flex min-w-0 flex-1 items-center gap-3"><Search size={19} className="shrink-0 text-[#6c8268]" /><span className="sr-only">Search</span><input required minLength={3} maxLength={200} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search a business or address" className="min-w-0 w-full bg-transparent py-2.5 text-sm outline-none" /></label>
+          <button disabled={searching || query.trim().length < 3} className="inline-flex h-10 shrink-0 items-center justify-center gap-3 bg-[#254e3b] px-3 text-sm font-semibold text-white transition-colors hover:bg-[#193e2d] disabled:opacity-40 sm:px-5">{searching ? <><LoaderCircle size={16} className="animate-spin" /><span className="sr-only sm:not-sr-only">Searching…</span></> : <><span className="sr-only sm:not-sr-only">Search</span><ArrowRight size={16} /></>}</button>
         </form>
-        <p className="mt-3 text-xs text-[#687b65]">Know the place? Search here. Looking for opportunities? Discover three suitable venues below.</p>
         {error && <p role="alert" className="mt-4 text-sm text-[#944d43]">{error}</p>}
       </div>
     </section>

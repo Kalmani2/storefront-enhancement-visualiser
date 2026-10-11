@@ -38,16 +38,16 @@ it("shows saved before/after, exact products and provenance only for automatical
   expect(screen.queryByText(/unfinished layouts are clearly marked/)).not.toBeInTheDocument();
 });
 
-it("includes Thirst's completed manually chosen frame without claiming automatic frontage approval", async () => {
+it("shows Thirst as automatically discovered and preserves its reviewed composition", async () => {
   const thirst = { ...project, id: submissionExamples[2].projectId, title: "Thirst Bar Soho", frontageReview: undefined,
     image: { provider: "google-street-view", panoId: "chosen-camera", headingOffset: 15, storagePath: "saved.png", copyright: "© Google" } } as Project;
   vi.mocked(listProjects).mockResolvedValue([project, { ...project, id: submissionExamples[1].projectId, title: "KOZZEE" }, thirst]);
   render(await ExamplesPage());
   expect(screen.getByRole("status")).toHaveTextContent("3 of 3 compositions ready");
   expect(screen.getByAltText("Planter proposal for Thirst Bar Soho")).toHaveAttribute("src", `/api/projects/${thirst.id}/composition/files/after.png`);
-  expect(screen.getByText(/Example 03 · Named venue · Manually selected frontage/)).toBeVisible();
+  expect(screen.getByText(/Example 03.*Automatically discovered/)).toBeVisible();
   expect(screen.getByText("Before · Street View · © Google")).toBeVisible();
-  expect(screen.getByText(/Frontage manually selected; no automatic frontage assessment/)).toBeInTheDocument();
+  expect(screen.getByText("Clear THIRST signage, visible entrances and bare pavement suitable for planter placement.")).toBeInTheDocument();
   expect(screen.queryByText("Awaiting composition")).not.toBeInTheDocument();
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -71,15 +71,15 @@ it("uses the requested lineup, excludes DUCKSOUP and keeps Thirst third while it
   render(await ExamplesPage());
   expect(screen.getAllByRole("heading", { level: 2 }).map(node => node.textContent)).toEqual(["Test Cafe", "KOZZEE", "Thirst Bar Soho"]);
   expect(screen.queryByText("DUCKSOUP")).not.toBeInTheDocument();
-  expect(screen.getByText(/Example 03 · Named venue · Automatically assessed/)).toBeVisible();
+  expect(screen.getByText(/Example 03.*Automatically discovered/)).toBeVisible();
   expect(screen.getByRole("status")).toHaveTextContent("2 of 3 compositions ready");
   expect(screen.getByRole("link", { name: "Place planters" })).toHaveAttribute("href", `/studio?id=${thirst.id}`);
   expect(screen.queryByAltText("Planter proposal for Thirst Bar Soho")).not.toBeInTheDocument();
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it("does not claim approval for a featured project without a frontage assessment", async () => {
-  vi.mocked(listProjects).mockResolvedValue([{ ...project, frontageReview: undefined }]);
+it("does not add unlisted projects to the submission examples", async () => {
+  vi.mocked(listProjects).mockResolvedValue([{ ...project, id: "unlisted", frontageReview: undefined }]);
   render(await ExamplesPage());
   expect(screen.queryByRole("heading", { name: "Test Cafe" })).not.toBeInTheDocument();
   expect(readComposition).not.toHaveBeenCalled();

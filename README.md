@@ -1,91 +1,89 @@
 # Storefront Enhancement Visualiser
 
-A prototype for the Innate AI take-home task: discover London venues, inspect storefronts, and prepare planter installations.
+[Open the live app](https://storefront-enhancement-visualiser.vercel.app) · [View examples](https://storefront-enhancement-visualiser.vercel.app/examples)
 
-Built with Next.js, TypeScript, Tailwind CSS, shadcn/ui and Lucide icons.
+Find London businesses with under-dressed frontages and preview the client's planters outside their real entrances. The app combines venue search, automatic frontage checks, reusable planter assets and AI-assisted composition.
 
-Demo: [Storefront Visualiser](https://storefront-enhancement-visualiser.vercel.app). Start at **Library → Submission examples** for completed before/after proposals at Salon64, KOZZEE and Thirst Bar Soho, or use Venue search to try the workflow yourself.
+Built with Next.js, TypeScript and Supabase. See [design.md](design.md) for the approach and tradeoffs.
 
 ## Features
 
-- Automatic frontage discovery: mixed business searches, entrance/identity/placement checks, one Street View retry and Google Places photo fallback. Approved venues are saved separately from projects and reused without repeated vision calls.
-- **Search** a named business or address; **Discover** automatically finds three suitable new venues in a London area.
-- **Submission examples** shows before/after images, supplied planter references, addresses and selection reasons. Thirst uses an owner-selected Street View; Salon64 and KOZZEE use automatically selected frontages. The original three-venue unseeded discovery run is documented in `design.md`. Open the gallery from Library or at `/examples`.
-- Compare up to five outdoor Street View candidates and adjust camera direction and framing.
-- Save the selected Street View with a project, choose approved planters, automatically estimate scale, and drag arrangements onto the storefront.
-- Export basic compositions or run a separate Medium AI Enhance edit. Both outputs are retained.
-- Edit project names, venue details and notes; edit planter names and notes. Delete items with confirmation, including their stored images. Planters referenced by saved compositions cannot be deleted.
-- Upload planter photos, extract transparent assets at Medium quality, refine edges, review versions and export approved cutouts. High quality is disabled in both the interface and API.
-- Alternative venue discovery using OpenStreetMap and Mapillary.
-
+- Automatically discover suitable venues in a London area, or search a specific business or address.
+- Capture and assess real entrances using Street View, with Places photos as a fallback.
+- Save venues and storefront images in a shared project library.
+- Extract transparent planter assets from product photos, review them and reuse them across projects.
+- Estimate scale and adjust planter position, size and facing in Studio.
+- Generate enhanced proposals, compare before/after views and download saved results.
 
 ## Run locally
 
-Requires Node.js **24.x** and npm.
+You need **Node.js 24.x**, npm, a Supabase project, and Google Maps and OpenAI API credentials for the full workflow.
 
-Install dependencies:
+### 1. Install and configure
 
 ```bash
 npm ci
 ```
 
-Copy `.env.example` to `.env.local` and add keys for the features you want:
+Copy `.env.example` to `.env.local` and fill in:
 
-- `GOOGLE_MAPS_API_KEY`: venue search and Street View. Enable **Places API (New)** and **Street View Static API** in Google Cloud.
-- `OPENAI_API_KEY`: planter extraction, optional frontage assessment, cached scale estimation and optional AI Enhance.
-- `MAPILLARY_ACCESS_TOKEN`: photos in the alternative OSM flow.
-- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` and `SUPABASE_STORAGE_BUCKET=storefront-assets`: shared database and private image storage. Use the same values locally and on Vercel; the secret key stays server-side.
+| Variable | Purpose |
+| --- | --- |
+| `GOOGLE_MAPS_API_KEY` | Venue search and imagery. Enable **Places API (New)** and **Street View Static API** in Google Cloud. |
+| `OPENAI_API_KEY` | Automatic frontage checks, planter extraction, scale analysis and AI Enhance. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL. |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase browser key. |
+| `SUPABASE_SECRET_KEY` | Server-only database and storage credential. |
+| `SUPABASE_STORAGE_BUCKET` | Keep the default `storefront-assets`. |
 
-For a new Supabase project, run `supabase/migrations/202610100001_shared_library.sql` in its SQL Editor once. To copy an existing local planter library, run `npm run import:planters`. It uploads and verifies existing files without generating images or deleting local originals.
+`MAPILLARY_ACCESS_TOKEN` is optional, for the alternative OpenStreetMap/Mapillary search. Model settings already have defaults in `.env.example`.
 
-For automatic discovery, also run `supabase/migrations/202610110001_frontage_discovery.sql`. Open **Venue search**, enter an area under **Discover**, and select **Discover 3 venues**. Defaults: 3 new approvals, at most 10 businesses and 20 image/vision requests. Approved views and failed checks are reused. Refreshing pauses a run; Resume explicitly continues its existing budget. `OPENAI_FRONTAGE_MODEL` defaults to `gpt-4.1-mini`. Local and deployed discovery use the same settings. Image reuse requires appropriate rights, independent of visual approval.
+Keep `.env.local` out of Git. API calls can incur charges; viewing saved examples does not generate new images or call Google.
 
-Keep secret API keys server-side; Supabase's publishable key is intended for browser use. Never commit `.env.local`. External API calls may incur charges.
+### 2. Set up storage
 
-Start the app:
+Run these files in the Supabase SQL Editor, in order:
+
+1. [Shared library migration](supabase/migrations/202610100001_shared_library.sql) — creates the library tables and private storage bucket.
+2. [Frontage discovery migration](supabase/migrations/202610110001_frontage_discovery.sql) — stores automatic selection and image assessments.
+
+A new Supabase project starts with an empty library. Upload your own product photos and save venues to populate it.
+
+### 3. Start the app
 
 ```bash
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000). Start with **Venue Search**, or upload a planter from the **Library**.
+Open [localhost:3000](http://localhost:3000).
 
-## Current limits
+## Using the app
 
-Projects, planter metadata and planter image versions are saved in Supabase. Current browser projects are imported on the next Library visit, keeping a browser backup. The selected Google Street View is saved with the project and loaded automatically in Studio; no storefront upload is needed. Existing Google projects fetch their selected frame once on first opening. This workflow assumes the project owner's stated permission to use, edit and export these images. Mapillary remains a reference in the alternative discovery flow. Street View candidates still need visual inspection.
+In **Venue search**, search for a business/address or use **Discover** to find suitable prospects automatically. Review the returned frontage and save it as a project.
 
-The top Search bar returns up to five London matches. The first match is selected and up to five Street View frames load automatically; selecting another match loads its views. Direction/framing changes load automatically too, reusing previously loaded frames. Failed requests require an explicit retry. **Check this frontage automatically** starts the complete assessment/retry/fallback flow from one button, with one spending confirmation. Discover below performs automated prospect selection; manual project saves are not automatic approvals.
+In **Library**, upload a product photograph, extract the planter and review the cutout. Containers and their plants stay together as one arrangement.
 
-Venue search background: [London photograph from Unsplash](https://images.unsplash.com/photo-1513635269975-59663e0ac1ad), bundled locally in `public/london-skyline.jpg`.
+Open a saved project to enter **Studio**. Its frontage loads automatically; no separate storefront upload is needed. Choose a planter, adjust its position and scale, then export a basic composition or use **AI Enhance** to integrate perspective, lighting and shadows. Compare the result with the original before approving and sharing it.
 
-Both local and Vercel apps use the same Supabase library. Uploads go directly to private storage; downloads use short-lived signed links. With no Supabase configuration, the local planter tool can still use `output/planters/`. Configured cloud failures never fall back to local files.
+## Current limits and costs
 
-This is one shared demo workspace, not a private multi-user application. App library endpoints are public; database access is server-side and browser keys cannot query the tables directly. Keep sensitive data out. Extraction, composition and discovery work on Vercel whenever their keys are present, just as locally. Composition metadata and outputs use the private bucket under `compositions/<project-id>/`.
+- Scale is approximate, based on assumed reference dimensions. Novel angles and obscured product details are inferred; there is no full 3D reconstruction.
+- Full-image enhancement can alter storefront details. Automated checks can miss defects, and manual approval is available. Inspect products, signage and access before sharing.
+- This is a shared demo workspace with public application endpoints, without separate private user accounts. Local and deployed apps share data when configured with the same Supabase project. Use only imagery you have permission to store, edit and distribute.
+- Discovery targets three approvals but can return fewer when imagery is unsuitable or its attempt budget is exhausted. Refreshing pauses a discovery batch; use Resume to continue.
 
-## Deployment and reasonable limits
+All image generation uses **Medium**. Recorded composition examples cost approximately **$0.06–$0.075 per image**, excluding Google requests and vision analysis. Extraction uses `gpt-image-1.5`; enhancement uses `gpt-image-2`. Actual charges vary with inputs and output size.
 
-Set the same Google, OpenAI and Supabase environment variables in Vercel as locally, use Node 24, and redeploy the latest commit. No new migration is needed for limits. The old `ENABLE_HOSTED_EXTRACTION` and `ENABLE_HOSTED_DISCOVERY` flags are no longer used; optional `ENABLE_PAID_AI=false` is an emergency stop in either environment.
+Shared daily AI limits are **20 extractions, 40 compositions and 200 vision assessments**, resetting at midnight UTC. Failed attempts count; cached results and basic editing do not. Google charges are separate. Set `ENABLE_PAID_AI=false` to disable paid AI requests while keeping saved results available.
 
-The shared workspace allows **20 extraction requests, 40 composition requests and 200 vision assessments per UTC day**. These are request limits, not dollar guarantees; counts include attempted/failed requests and reset at 00:00 UTC. Local and Vercel use the same counters when connected to the same bucket. Create-only storage receipts reserve slots atomically across instances; a storage error stops the paid request. Cached outputs and basic editing/export do not consume slots. Recovery of an existing generated image consumes no new composition slot, but may use a vision assessment. Google imagery/search charges are separate; direct search automatically retrieves at most five frames for the selected venue, and each discovery run retains its existing 20-image cap.
+## Deploy and check
 
-## Storefront composition
+For Vercel, use Node.js 24 and configure the same environment variables as locally. Apply both Supabase migrations before using a new database, then deploy.
 
-Open a saved Google project from Library and choose an approved planter. The saved Street View is used automatically. Cached visual analysis identifies a plausible scale reference, camera direction, pavement slope and lighting. Alpha analysis finds separate container bases and estimates the visible container fraction. Geometry translates the assumed dimensions into image proportions and adjusts size with distance. These are approximate dimensions, not a survey; adjust the size when the reference is unclear.
+```bash
+npm run check
+```
 
-Drag, arrow keys, size, facing, flip, duplication and basic PNG exports are free of image API calls. The placement canvas is an affine guide, not a 3D model. **AI Enhance / Medium** sends that guide, the untouched storefront and the exact product references to **gpt-image-2**. It reconstructs the visible container faces and planting directly within the street photograph, harmonising perspective, lighting, reflections and ground contact together. The complete generated photograph is used directly, without a spot mask, alignment or regional blending. The prompt explicitly preserves building geometry, brickwork, lettering, windows, people, pavement, camera framing and photographic texture. Generated details can still drift, so compare with the original before sharing. The previous spot-edit method remains in the code for legacy jobs, and its saved results stay in history. New results are labelled Full image; previous regional results are labelled Spot render.
+This runs lint, unit tests and a production build. For browser tests, start the app and run `npx playwright test`; set `PLANTER_TEST_URL` to your local URL, since tests default to port 3100. Browser tests mock paid providers and use Google Chrome.
 
-Use **Facing** to match the storefront automatically or request an angle between -60 and +60 degrees. **Compare** provides a before/after slider. Completed outputs remain in the project, including their original layout. An unchanged layout reuses its finished render; **Generate another version** explicitly requests a new paid image. Failed jobs keep the basic output and never retry image generation automatically. If a paid raw image exists but processing failed, **Recover saved render** retries processing and review without another image generation charge.
-
-A separate visual review checks product identity, grounding, entrances and scene preservation. Flagged images need approval before export; the reviewer can approve a result with concerns. Approved results retain their review notes. This is a practical review gate, not a guarantee of product fidelity. Inspect every sales proposal: a single product photo cannot reveal hidden surfaces, exact dimensions or reliable foreground occlusion. Choose clear pavement away from people, steps and entrances.
-
-Models use the same server-side OpenAI key:
-
-- Extraction: `OPENAI_IMAGE_MODEL`, default `gpt-image-1.5`, Medium.
-- Scene integration: `OPENAI_COMPOSITION_MODEL`, default `gpt-image-2`, Medium.
-- Geometry and final review: `OPENAI_COMPOSITION_VISION_MODEL`, default `gpt-4.1`.
-
-The tested 1280 x 960 ROBATA scene renders cost approximately **$0.067 each for image generation**, using reported tokens and published model rates. Analysis and review are separate small charges (roughly $0.006-$0.01 per vision call in this example). Costs vary with model, dimensions and references. The saved output displays the image generation estimate; it is not an account invoice. No High option is exposed or accepted for image generation.
-
-The ROBATA example is saved in the shared project and locally under `output/robata-example/` (previous transparent-render experiment); the restored scene-edit example is in `output/robata-scene-example/`. See [design.md](design.md) for the pipeline, assignment requirements and remaining limits.
-
-Run `npm run check` for lint, unit tests and a production build. Browser tests: start the app, then `npx playwright test` (set `PLANTER_TEST_URL` if using a port other than 3100). Browser tests mock paid providers.
+London background photograph: [Unsplash](https://images.unsplash.com/photo-1513635269975-59663e0ac1ad).
