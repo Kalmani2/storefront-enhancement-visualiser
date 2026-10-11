@@ -1,7 +1,7 @@
 import type { GoogleVenue } from "../google/types";
 import type { SearchBounds } from "../google/prospects";
 
-export const RULES_VERSION = "frontage-v1";
+export const RULES_VERSION = "frontage-v2";
 export const RUN_LIMITS = { venues: 10, images: 20, target: 3, street: 2, photos: 2 } as const;
 
 export type StreetFrame = {
@@ -17,6 +17,7 @@ export type Assessment = {
   identity: "confirmed" | "uncertain" | "wrong";
   exterior: boolean; entranceVisible: boolean; framingUsable: boolean;
   placementSpace: boolean; underDressed: boolean; imageQuality: boolean;
+  plantingLevel?: "bare" | "light" | "substantial";
   issues: string[]; reason: string;
   action: "accept" | "reframe" | "next-camera" | "reject-venue";
   entranceBox: { x: number; y: number; width: number; height: number } | null;
@@ -32,7 +33,7 @@ export type ApprovedVenue = {
   status: "approved" | "stale" | "removed";
   review: AssessmentRecord; savedAt: string;
 };
-export type Attempt = { venueId: string; venueName: string; source?: FrontageFrame["source"]; outcome: Verdict | "error" | "skipped"; reason: string; reused?: boolean; assessmentId?: string };
+export type Attempt = { venueId: string; venueName: string; source?: FrontageFrame["source"]; outcome: Verdict | "error" | "skipped"; reason: string; reused?: boolean; assessmentId?: string; imageUsable?: boolean; venueSuitable?: boolean; issues?: string[] };
 export type CurrentVenue = {
   venue: GoogleVenue; frames: StreetFrame[]; streetUsed: number; photoUsed: number;
   correction?: StreetFrame;

@@ -1,12 +1,13 @@
 import { test, expect } from "@playwright/test";
 import sharp from "sharp";
 
-test("direct lookup, prospect mode, group loading, framing and project saving", async ({ page }) => {
+test("Search above Discover, group loading, framing and project saving", async ({ page }) => {
   const venue = { placeId: "testplace1234", name: "Frith Street Cafe", address: "49 Frith Street, London W1D 4SG", latitude: 51.5135, longitude: -0.132, category: "coffee shop", mapsUrl: "https://maps.google.com" };
   const cameras = [0, 1].map(index => ({ panoId: `camera-${index}`, token: `signed-${index}`, latitude: 51.514, longitude: -0.133, distanceMetres: 15, heading: 90, fov: 65, pitch: -5, copyright: "© Google", date: "2026-01" }));
   const jpeg = await sharp({ create: { width: 640, height: 420, channels: 3, background: "#a9b9a0" } }).jpeg().toBuffer();
   const queries = [], imageCalls = [], errors = [];
   const projects = [];
+  await page.route("**/api/frontage-discovery", route => route.fulfill({ json: { venues: [] } }));
   await page.route("**/api/projects", route => {
     if (route.request().method() === "POST") {
       const { project } = route.request().postDataJSON();
@@ -42,12 +43,11 @@ test("direct lookup, prospect mode, group loading, framing and project saving", 
   await expect(page).toHaveURL("/google");
   await expect(page.getByRole("navigation").getByRole("link")).toHaveCount(2);
   await expect(page.getByRole("heading", { name: "Project library", exact: true })).toHaveCount(0);
-  expect(await page.getByRole("region", { name: "Venue search", exact: true }).evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(350);
+  await expect(page.getByRole("heading", { name: "Discover", exact: true })).toBeVisible();
   await page.screenshot({ path: ".cache/venue-search-start.png", fullPage: true });
-  await page.getByRole("button", { name: "Search a place", exact: true }).click();
-  await expect(page.getByLabel("Business type")).toHaveCount(0);
-  await page.getByLabel("London business name or address").fill("49 Frith Street");
-  await page.getByRole("button", { name: "Find place", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Search a place", exact: true })).toHaveCount(0);
+  await page.getByLabel("Search", { exact: true }).fill("49 Frith Street");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Project library", exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Planter library", exact: true })).toHaveCount(0);
   await page.getByRole("complementary", { name: "Places" }).getByRole("button").click();
@@ -80,24 +80,12 @@ test("direct lookup, prospect mode, group loading, framing and project saving", 
   expect(projects[0]).toMatchObject({ title: "Frith Street proposal", venueId: venue.placeId, image: { panoId: "camera-1", fov: 45 } });
   expect(await page.evaluate(() => localStorage.getItem("storefront-visualiser-projects-v2"))).toBeNull();
   await page.goto("/google");
-  await page.getByRole("button", { name: "Find prospects", exact: true }).last().click();
-  await expect(page.getByRole("heading", { name: "20 places found" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Project library", exact: true })).toHaveCount(0);
-  await page.getByRole("complementary", { name: "Places" }).getByRole("button").first().click();
-  await expect(page.getByRole("button", { name: "Load 2 views" })).toBeVisible();
-  const sizes = await page.evaluate(() => {
-    const list = document.querySelector('aside[aria-label="Places"]');
-    return { list: list.getBoundingClientRect().height, detail: list.nextElementSibling.getBoundingClientRect().height, scrolls: list.firstElementChild.scrollHeight > list.firstElementChild.clientHeight };
-  });
-  expect(Math.abs(sizes.list - sizes.detail)).toBeLessThan(2);
-  expect(sizes.scrolls).toBe(true);
   await page.screenshot({ path: ".cache/venue-search-results.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.getByRole("button", { name: "Search a place", exact: true }).click();
   await expect(page.getByRole("region", { name: "Search results" })).toHaveCount(0);
-  await expect(page.getByLabel("London business name or address")).toBeVisible();
-  await page.getByRole("link", { name: "Back to library", exact: true }).click();
+  await expect(page.getByLabel("Search", { exact: true })).toBeVisible();
+  await page.getByRole("navigation").getByRole("link", { name: "Library", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Project library", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Search workspace" })).toHaveCount(0);
   await page.screenshot({ path: ".cache/workspace-mobile.png", fullPage: true });
@@ -105,6 +93,7 @@ test("direct lookup, prospect mode, group loading, framing and project saving", 
 });
 
 test("empty and failed searches remain separate from the library", async ({ page }) => {
+  await page.route("**/api/frontage-discovery", route => route.fulfill({ json: { venues: [] } }));
   await page.route("**/api/projects", route => route.fulfill({ json: [] }));
   await page.route("**/api/planters", route => route.fulfill({ json: { assets: [], configured: false, uploadsAvailable: false } }));
   let fail = false;
@@ -113,14 +102,16 @@ test("empty and failed searches remain separate from the library", async ({ page
   await expect(page.getByRole("region", { name: "Venue search", exact: true })).toHaveCount(0);
   await page.getByRole("navigation").getByRole("link", { name: "Venue search" }).click();
   await expect(page).toHaveURL("/google");
-  await page.getByRole("button", { name: "Find prospects", exact: true }).last().click();
-  await expect(page.getByText("No matches found.", { exact: false })).toBeVisible();
+  await page.getByLabel("Search", { exact: true }).fill("Test Cafe");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByText("No matching London location found.", { exact: false })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Project library", exact: true })).toHaveCount(0);
-  await page.getByRole("link", { name: "Back to library", exact: true }).click();
+  await page.getByRole("navigation").getByRole("link", { name: "Library", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Project library", exact: true })).toBeVisible();
   fail = true;
   await page.getByRole("navigation").getByRole("link", { name: "Venue search" }).click();
-  await page.getByRole("button", { name: "Find prospects", exact: true }).last().click();
+  await page.getByLabel("Search", { exact: true }).fill("Test Cafe");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByRole("region", { name: "Venue search", exact: true }).getByRole("alert")).toContainText("Search temporarily unavailable.");
   await expect(page.getByRole("heading", { name: "Project library", exact: true })).toHaveCount(0);
   await page.getByRole("navigation").getByRole("link", { name: "Library" }).click();

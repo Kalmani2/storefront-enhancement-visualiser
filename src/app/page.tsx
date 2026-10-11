@@ -39,6 +39,7 @@ export default function LibraryPage() {
       {error && <div role="alert" className="mb-5 flex flex-wrap items-center gap-4 text-sm text-[#944d43]">{error}<button type="button" onClick={() => { setLoading(true); setError(""); setAttempt(value => value + 1); }} className="font-semibold underline">Try again</button></div>}
       {notice && <p role="status" className="mb-5 border-l-2 border-[#78977a] bg-[#e5eddf] px-4 py-3 text-sm text-[#496b50]">{notice}</p>}
       {loading && <p role="status" className="mb-6 flex items-center gap-2 text-sm text-[#627a66]"><LoaderCircle size={16} className="animate-spin" />Loading saved projects…</p>}
+      <Link href="/examples" className="mb-6 flex flex-wrap items-center justify-between gap-3 border border-[#b9cbb3] bg-[#e3ebdc] px-5 py-4 text-sm text-[#31533a]"><span><strong>Submission examples</strong><span className="ml-2">Automatically selected venues, before & after, and the supplied products.</span></span><ArrowRight size={18} /></Link>
       {!loading && !error && projects.length === 0 && <p className="mb-6 text-sm text-[#627a66]">No saved projects yet. Discover a venue and save its selected frontage to get started.</p>}
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {projects.map((project, index) => <article key={project.id} className="overflow-hidden border border-[#d5d9cd] bg-[#fbfaf5] shadow-[0_10px_22px_rgba(45,60,40,0.04)]">

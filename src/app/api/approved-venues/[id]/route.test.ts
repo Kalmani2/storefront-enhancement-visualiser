@@ -6,7 +6,7 @@ import { getApproved, markApproved } from "@/lib/frontage/store";
 import { frameAvailable, fetchFrontageImage } from "@/lib/frontage/images";
 import { getProject, storeGoogleFrontage, storeFrontage } from "@/lib/project-store";
 import { PlanterError } from "@/lib/planters/validation";
-import type { ApprovedVenue } from "@/lib/frontage/types";
+import { RULES_VERSION, type ApprovedVenue } from "@/lib/frontage/types";
 import { storageClient } from "@/lib/storage";
 
 vi.mock("@/lib/frontage/store", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/frontage/store")>(), getApproved: vi.fn(), markApproved: vi.fn() }));
@@ -16,7 +16,7 @@ vi.mock("@/lib/storage", () => ({ storageClient: vi.fn() }));
 
 const bytes = Buffer.from("verified-original");
 const approved = { venue: { placeId: "testplace1234", name: "Test Cafe", address: "1 Test Street", category: "cafe", mapsUrl: "https://maps.google.com" }, status: "approved",
-  review: { id: "a".repeat(64), checkedAt: "2026-10-11T00:00:00Z", expiresAt: "2099-01-01", rulesVersion: "frontage-v1", model: "gpt-4.1-mini", fingerprint: fingerprint(bytes), assessment: { reason: "Visible sign and entrance." },
+  review: { id: "a".repeat(64), checkedAt: "2026-10-11T00:00:00Z", expiresAt: "2099-01-01", rulesVersion: RULES_VERSION, model: "gpt-4.1-mini", fingerprint: fingerprint(bytes), assessment: { reason: "Visible sign and entrance." },
     frame: { source: "streetview", panoId: "pano", heading: 80, pitch: -8, fov: 75, copyright: "© Google" } } } as ApprovedVenue;
 const context = { params: Promise.resolve({ id: approved.venue.placeId }) };
 function request(body: unknown) { return new Request("http://localhost/api/approved-venues/testplace1234", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }

@@ -1,7 +1,7 @@
 import { getGoogleVenue, searchGoogleVenues, searchMixedVenues } from "../google/provider";
 import { categoryProfiles, isKnownChain, type GoogleCategory } from "../google/prospects";
 import { PlanterError } from "../planters/validation";
-import { assessFrontage, assessmentKey, correctedFrame, fingerprint, frontageModel, verdict } from "./assessment";
+import { assessFrontage, assessmentKey, correctedFrame, decisionReason, fingerprint, frontageModel, imageUsable, venueSuitable, verdict } from "./assessment";
 import { candidateFrames, fetchFrontageImage, frameAvailable } from "./images";
 import * as store from "./store";
 import { RULES_VERSION, RUN_LIMITS, type ApprovedVenue, type AssessmentRecord, type DiscoveryRun, type FrontageFrame } from "./types";
@@ -62,7 +62,7 @@ export async function stepRun(run: DiscoveryRun, save: store.SaveRun, dep = depe
     }
     if (run.approvedIds.length >= run.target || run.images >= RUN_LIMITS.images || (!run.current && run.cursor >= run.candidates.length)) {
       run.status = "complete";
-      run.message = `${run.approvedIds.length} venue${run.approvedIds.length === 1 ? "" : "s"} approved. ${run.images >= RUN_LIMITS.images ? "Image budget reached; no more requests made." : run.approvedIds.length >= run.target ? "Batch target reached. Choose Find more to continue." : "Candidate shortlist exhausted. Try another area or category."}`;
+      run.message = `${run.approvedIds.length} venue${run.approvedIds.length === 1 ? "" : "s"} approved. ${run.images >= RUN_LIMITS.images ? "Image budget reached; no more requests made." : run.approvedIds.length >= run.target ? "Batch target reached. Start another discovery batch to find more." : "Candidate shortlist exhausted. Try another area or category."}`;
       await save(run); return run;
     }
     if (!run.current) {
@@ -132,12 +132,12 @@ export async function stepRun(run: DiscoveryRun, save: store.SaveRun, dep = depe
       }
     }
     delete run.pending;
-    run.attempts.push({ venueId: venue.placeId, venueName: venue.name, source: frame.source, outcome: record.verdict, reason: record.assessment.reason, reused: Boolean(cached && record === cached), assessmentId: record.id });
+    run.attempts.push({ venueId: venue.placeId, venueName: venue.name, source: frame.source, outcome: record.verdict, reason: decisionReason(record.assessment), imageUsable: imageUsable(record.assessment), venueSuitable: venueSuitable(record.assessment), issues: record.assessment.issues, reused: Boolean(cached && record === cached), assessmentId: record.id });
     if (record.verdict === "approved") {
       await dep.saveApproved({ venue, area: run.location, bounds: run.bounds, status: "approved", review: record, savedAt: new Date().toISOString() });
       run.approvedIds.push(venue.placeId); delete run.current;
       run.message = `${venue.name} approved and saved to the shortlist.`;
-    } else if (record.assessment.identity === "confirmed" && record.assessment.exterior && record.assessment.entranceVisible && record.assessment.framingUsable && record.assessment.action === "reject-venue") {
+    } else if (record.assessment.identity === "confirmed" && imageUsable(record.assessment) && !venueSuitable(record.assessment) && record.assessment.action === "reject-venue") {
       finishVenue(run, "Correct frontage, but unsuitable for a planter installation.");
     } else {
       if (frame.source === "streetview" && current.streetUsed < RUN_LIMITS.street) current.correction = correctedFrame(frame, record.assessment);

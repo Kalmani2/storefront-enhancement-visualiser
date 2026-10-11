@@ -4,7 +4,7 @@ import sharp from "sharp";
 test("confirmed automatic discovery, saved preview and project hand-off", async ({ page }) => {
   const date = new Date().toISOString();
   const venue = { placeId: "testplace1234", name: "Test Cafe", address: "1 Test Street, Soho, London", latitude: 51.514, longitude: -.136, category: "cafe", mapsUrl: "https://maps.google.com" };
-  const accepted = { venue, status: "approved", area: "Soho", savedAt: date, review: { id: "a".repeat(64), venueId: venue.placeId, checkedAt: date, expiresAt: "2099-01-01", rulesVersion: "frontage-v1", model: "gpt-4.1-mini", verdict: "approved", assessment: { reason: "Matching cafe sign, complete doorway and bare pavement." }, frame: { source: "streetview", panoId: "pano", heading: 90, fov: 65, pitch: -5 } } };
+  const accepted = { venue, status: "approved", area: "Soho", savedAt: date, review: { id: "a".repeat(64), venueId: venue.placeId, checkedAt: date, expiresAt: "2099-01-01", rulesVersion: "frontage-v2", model: "gpt-4.1-mini", verdict: "approved", assessment: { reason: "Matching cafe sign, complete doorway and bare pavement." }, frame: { source: "streetview", panoId: "pano", heading: 90, fov: 65, pitch: -5 } } };
   let venues = [], run, steps = 0, imageRequests = 0, created = 0, starts = 0;
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   const image = await sharp({ create: { width: 640, height: 480, channels: 3, background: "#bacbb5" } }).png().toBuffer();
@@ -28,16 +28,14 @@ test("confirmed automatic discovery, saved preview and project hand-off", async 
     imageRequests++; return route.fulfill({ contentType: "image/png", body: image });
   });
   await page.goto("/google");
-  await page.getByText("Automatic frontage discovery", { exact: true }).click();
-  await expect(page.getByText("Your shortlist starts here")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Discover", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Discover 3 venues" })).toBeVisible();
   expect(starts).toBe(0); expect(imageRequests).toBe(0);
-  await page.getByRole("button", { name: "Discover new", exact: true }).click();
   page.once("dialog", dialog => dialog.dismiss());
-  await page.getByRole("button", { name: "Find 3 new venues" }).click(); expect(starts).toBe(0);
+  await page.getByRole("button", { name: "Discover 3 venues" }).click(); expect(starts).toBe(0);
   page.once("dialog", dialog => dialog.accept());
-  await page.getByRole("button", { name: "Find 3 new venues" }).click();
+  await page.getByRole("button", { name: "Discover 3 venues" }).click();
   await expect(page.getByText("1 venue approved. Candidate shortlist exhausted.")).toBeVisible();
-  await page.getByRole("button", { name: "View approved venues" }).click();
   await expect(page.getByRole("heading", { name: "Test Cafe", exact: true })).toBeVisible();
   expect(imageRequests).toBe(0);
   page.once("dialog", dialog => dialog.accept());
@@ -54,7 +52,6 @@ test("confirmed automatic discovery, saved preview and project hand-off", async 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: ".cache/frontage-discovery-mobile.png", fullPage: true });
   await page.reload();
-  await page.getByText("Automatic frontage discovery", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Test Cafe", exact: true })).toBeVisible();
   expect(starts).toBe(1); expect(steps).toBe(1); expect(imageRequests).toBe(1); expect(errors).toEqual([]);
 });

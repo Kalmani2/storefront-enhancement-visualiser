@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assessFrontage, assessmentKey, correctedFrame, fingerprint, validateAssessment, verdict } from "./assessment";
+import { assessFrontage, assessmentKey, correctedFrame, decisionReason, fingerprint, validateAssessment, verdict } from "./assessment";
 import { dependencies, freshRun, stepRun } from "./engine";
 import { RULES_VERSION, type ApprovedVenue, type Assessment, type AssessmentRecord, type DiscoveryRun, type StreetFrame } from "./types";
 import type { GoogleVenue } from "../google/types";
@@ -36,6 +36,13 @@ function setup(count = 1) {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("frontage acceptance and reframing", () => {
+  it("accepts light planting and minor caveats, but not substantial planting or the wrong store", () => {
+    expect(verdict({ ...good, underDressed: false, plantingLevel: "light", issues: ["pedestrian away from entrance"] })).toBe("approved");
+    expect(verdict({ ...good, plantingLevel: "substantial" })).toBe("rejected");
+    expect(verdict({ ...good, plantingLevel: "bare", identity: "wrong" })).toBe("rejected");
+    expect(decisionReason({ ...good, underDressed: false, plantingLevel: "substantial" })).toMatch(/substantially planted/i);
+    expect(() => validateAssessment({ ...good, plantingLevel: "lots" })).toThrow();
+  });
   it("never lets the model's accept action override failed evidence", () => {
     expect(verdict(good)).toBe("approved");
     expect(verdict({ ...good, identity: "uncertain" })).toBe("uncertain");

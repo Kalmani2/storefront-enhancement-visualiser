@@ -2,12 +2,12 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { FrontageDiscovery } from "./frontage-discovery";
-import type { ApprovedVenue } from "../lib/frontage/types";
+import { RULES_VERSION, type ApprovedVenue } from "../lib/frontage/types";
 
 const approved: ApprovedVenue = {
   venue: { placeId: "testplace1234", name: "Test Cafe", address: "1 Test Street, Soho", latitude: 51.514, longitude: -.136, category: "cafe", mapsUrl: "https://maps.google.com" },
   area: "Soho", status: "approved", savedAt: "2026-10-11T00:00:00Z",
-  review: { id: "a".repeat(64), venueId: "testplace1234", rulesVersion: "frontage-v1", model: "gpt-4.1-mini", fingerprint: "b".repeat(64), checkedAt: "2026-10-11T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z",
+  review: { id: "a".repeat(64), venueId: "testplace1234", rulesVersion: RULES_VERSION, model: "gpt-4.1-mini", fingerprint: "b".repeat(64), checkedAt: "2026-10-11T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z",
     frame: { source: "streetview", panoId: "pano", latitude: 51.514, longitude: -.136, heading: 90, pitch: -5, fov: 65, width: 640, height: 480, copyright: "© Google" },
     verdict: "approved", assessment: { identity: "confirmed", exterior: true, entranceVisible: true, framingUsable: true, placementSpace: true, underDressed: true, imageQuality: true, issues: [], reason: "Correct signage and clear pavement.", action: "accept", entranceBox: null } },
 };
@@ -31,8 +31,7 @@ describe("approved shortlist controls", () => {
   it("requires confirmation both for loading a preview and starting new discovery", async () => {
     render(<FrontageDiscovery />); fireEvent.click(await screen.findByRole("button", { name: "Load approved view" }));
     expect(fetch).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Discover new" }));
-    fireEvent.click(screen.getByRole("button", { name: "Find 3 new venues" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discover 3 venues" }));
     expect(window.confirm).toHaveBeenCalledTimes(2); expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("does not send a new assessment when reopening a saved image", async () => {

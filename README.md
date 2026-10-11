@@ -7,7 +7,8 @@ Built with Next.js, TypeScript, Tailwind CSS, shadcn/ui and Lucide icons.
 ## Features
 
 - Automatic frontage discovery: mixed business searches, entrance/identity/placement checks, one Street View retry and Google Places photo fallback. Approved venues are saved separately from projects and reused without repeated vision calls.
-- Find London prospects by area and business type, or search a specific business name or street address using Google Places.
+- **Search** a named business or address; **Discover** automatically finds three suitable new venues in a London area.
+- **Submission examples** shows automatically selected venues with before/after images, supplied planter references, addresses and selection reasons. Open it from Library or at `/examples`.
 - Compare up to five outdoor Street View candidates and adjust camera direction and framing.
 - Save the selected Street View with a project, choose approved planters, automatically estimate scale, and drag arrangements onto the storefront.
 - Export basic compositions or run a separate Medium AI Enhance edit. Both outputs are retained.
@@ -35,7 +36,7 @@ Copy `.env.example` to `.env.local` and add keys for the features you want:
 
 For a new Supabase project, run `supabase/migrations/202610100001_shared_library.sql` in its SQL Editor once. To copy an existing local planter library, run `npm run import:planters`. It uploads and verifies existing files without generating images or deleting local originals.
 
-For automatic discovery, also run `supabase/migrations/202610110001_frontage_discovery.sql`. Open **Automatic frontage discovery**, choose **Discover new**, enter a London area and confirm the batch. Defaults: 3 new approvals, at most 10 businesses and 20 image/vision requests. Approved views and failed checks are reused. Refreshing pauses a run; Resume explicitly continues its existing budget. `OPENAI_FRONTAGE_MODEL` defaults to `gpt-4.1-mini`. Set `ENABLE_HOSTED_DISCOVERY=true` in Vercel only when you want to enable confirmed paid discovery there; saved previews do not invoke vision. Image reuse requires appropriate rights, independent of visual approval.
+For automatic discovery, also run `supabase/migrations/202610110001_frontage_discovery.sql`. Open **Venue search**, enter an area under **Discover**, and select **Discover 3 venues**. Defaults: 3 new approvals, at most 10 businesses and 20 image/vision requests. Approved views and failed checks are reused. Refreshing pauses a run; Resume explicitly continues its existing budget. `OPENAI_FRONTAGE_MODEL` defaults to `gpt-4.1-mini`. Set `ENABLE_HOSTED_DISCOVERY=true` in Vercel only when you want to enable confirmed paid discovery there; saved previews do not invoke vision. Image reuse requires appropriate rights, independent of visual approval.
 
 Keep secret API keys server-side; Supabase's publishable key is intended for browser use. Never commit `.env.local`. External API calls may incur charges.
 
@@ -51,7 +52,7 @@ Open [localhost:3000](http://localhost:3000). Start with **Venue Search**, or up
 
 Projects, planter metadata and planter image versions are saved in Supabase. Current browser projects are imported on the next Library visit, keeping a browser backup. The selected Google Street View is saved with the project and loaded automatically in Studio; no storefront upload is needed. Existing Google projects fetch their selected frame once on first opening. This workflow assumes the project owner's stated permission to use, edit and export these images. Mapillary remains a reference in the alternative discovery flow. Street View candidates still need visual inspection.
 
-Direct place search returns up to five London matches in one Text Search request, without prospect category or chain filters. Choose a match, load its available image group, adjust framing if needed, then name and save the project. Search modes run separately; switching modes clears the previous results. Framing changes use the same group-load button and reuse views already loaded in the current session.
+The top Search bar returns up to five London matches in one Text Search request, without prospect category or chain filters. Choose a match and either check its frontage automatically or load and choose a view manually. Discover below performs the automated prospect selection and image checks; manual project saves are not automatic approvals. Framing changes reuse views already loaded in the current session.
 
 Venue search background: [London photograph from Unsplash](https://images.unsplash.com/photo-1513635269975-59663e0ac1ad), bundled locally in `public/london-skyline.jpg`.
 

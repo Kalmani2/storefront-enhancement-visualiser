@@ -19,7 +19,6 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export function FrontageDiscovery({ requestedVenue, onRequestHandled }: { requestedVenue?: GoogleVenue; onRequestHandled?: () => void }) {
-  const [tab, setTab] = useState<"approved" | "discover">("approved");
   const [venues, setVenues] = useState<ApprovedVenue[]>([]);
   const [run, setRun] = useState<DiscoveryRun>();
   const [area, setArea] = useState("Soho"), [category, setCategory] = useState("all");
@@ -57,7 +56,7 @@ export function FrontageDiscovery({ requestedVenue, onRequestHandled }: { reques
     if (run?.status === "running") { setError("Resume or cancel the existing run before starting another."); return; }
     const maximum = venue ? 4 : RUN_LIMITS.images;
     if (!window.confirm(`${venue ? `Find the best frontage for ${venue.name}` : `Find 3 new suitable venues in ${area}`}? Up to ${venue ? 1 : RUN_LIMITS.venues} businesses and ${maximum} image requests / vision assessments. Places search and fallback photo lookups also use Google requests. Saved checks will be reused unless you explicitly reassess.`)) return;
-    processing.current = true; setBusy(true); setError(""); setTab("discover");
+    processing.current = true; setBusy(true); setError("");
     try {
       const initial = await request<DiscoveryRun>("/api/frontage-discovery", json({ id: crypto.randomUUID(), location: area, category, placeId: venue?.placeId, force, confirmed: true }));
       setRun(initial); await drive(initial);
@@ -78,33 +77,30 @@ export function FrontageDiscovery({ requestedVenue, onRequestHandled }: { reques
   }
 
   const shown = venues.filter(v => `${v.venue.name} ${v.venue.address} ${v.area}`.toLowerCase().includes(filter.toLowerCase()));
-  return <section id="approved-discovery" aria-label="Automatic frontage discovery" className="mx-auto max-w-[1440px] px-6 py-10 md:px-10">
+  return <section id="approved-discovery" aria-label="Discover" className="mx-auto max-w-[1440px] px-6 py-8 md:px-10">
     <div className="mb-7 flex flex-wrap items-end justify-between gap-5">
-      <div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.18em] text-[#688069]">Find the right entrance</p><h1 className="font-serif text-4xl text-[#233c2b] md:text-5xl">Good frontages, remembered.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-[#697267]">Discover likely-independent London businesses. We check their entrances, try better views and save the ones worth working on.</p></div>
-      <div role="group" aria-label="Discovery view" className="flex border border-[#ccd4c6] bg-[#e9ede3] p-1">
-        <button className={tab === "approved" ? primary : button} aria-pressed={tab === "approved"} onClick={() => setTab("approved")}>Approved venues <span className="opacity-70">{venues.length}</span></button>
-        <button className={tab === "discover" ? primary : button} aria-pressed={tab === "discover"} onClick={() => setTab("discover")}>Discover new <Search size={15} /></button>
-      </div>
+      <div><h2 className="font-serif text-3xl text-[#233c2b]">Discover</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-[#697267]">Choose an area. We’ll find three promising businesses, check their entrances and save the usable views.</p></div>
+      <span className="border border-[#c9d4c0] bg-[#e7eddf] px-3 py-2 text-xs text-[#56704c]">Automatic selection · Saved decisions</span>
     </div>
     {error && <div role="alert" className="mb-5 border border-[#d7b9a3] bg-[#fff6eb] p-4 text-sm text-[#824b32]">{error}<button onClick={() => { setError(""); void refresh().catch(cause => setError(cause.message)); }} className="ml-3 underline">Retry loading saved data</button></div>}
     {requestedVenue && <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border border-[#bac9b9] bg-[#e5eddf] p-4"><p className="text-sm">Check <strong>{requestedVenue.name}</strong> automatically, including retries and fallback photos.</p><div className="flex gap-2"><button disabled={busy || run?.status === "running"} className={primary} onClick={() => { void start(requestedVenue); onRequestHandled?.(); }}>Find best frontage</button><button className={button} onClick={onRequestHandled}>Dismiss</button></div></div>}
-    {tab === "discover" && <form onSubmit={event => { event.preventDefault(); void start(); }} className="mb-6 grid gap-5 border border-[#d2d9cb] bg-[#faf9f2] p-6 md:grid-cols-[1fr_1fr_auto] md:items-end">
-      <label className="text-xs font-semibold text-[#526a57]">London area<input required minLength={2} maxLength={80} value={area} disabled={busy} onChange={event => setArea(event.target.value)} className="mt-2 block w-full border border-[#bbc8b7] bg-white px-3 py-3 text-sm" /></label>
+    <form id="discover-form" onSubmit={event => { event.preventDefault(); void start(); }} className="mb-6 grid gap-5 border border-[#d2d9cb] bg-[#faf9f2] p-6 md:grid-cols-[1fr_1fr_auto] md:items-end">
+      <label className="text-xs font-semibold text-[#526a57]">London area<input id="discover-area" required minLength={2} maxLength={80} value={area} disabled={busy} onChange={event => setArea(event.target.value)} className="mt-2 block w-full border border-[#bbc8b7] bg-white px-3 py-3 text-sm" /></label>
       <label className="text-xs font-semibold text-[#526a57]">Business mix<select value={category} disabled={busy} onChange={event => setCategory(event.target.value)} className="mt-2 block w-full border border-[#bbc8b7] bg-white px-3 py-3 text-sm"><option value="all">Cafes, restaurants & salons</option><option value="cafe">Cafes</option><option value="restaurant">Restaurants</option><option value="hair salon">Hair salons</option><option value="bar">Bars & pubs</option><option value="shop">Clothing boutiques</option></select></label>
-      <button disabled={loading || busy || run?.status === "running"} className={primary}>{busy ? <LoaderCircle size={16} className="animate-spin" /> : <Search size={16} />}Find 3 new venues</button>
+      <button disabled={loading || busy || run?.status === "running"} className={primary}>{busy ? <LoaderCircle size={16} className="animate-spin" /> : <Search size={16} />}Discover 3 venues</button>
       <p className="text-xs leading-5 text-[#738171] md:col-span-3">Up to 10 businesses and 20 image assessments per batch. Stops after 3 approvals. Existing decisions are reused; every new batch asks for confirmation. Search is limited to a neighbourhood-sized window.</p>
-    </form>}
+    </form>
     {run && <div aria-live="polite" className="mb-7 border-l-4 border-[#527652] bg-[#e8ecdf] p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold">{busy ? "Discovery in progress" : run.status === "running" ? "Discovery paused — ready to resume" : run.status === "error" ? "Discovery stopped safely" : "Discovery summary"}</p><p className="mt-2 text-sm text-[#52624d]">{run.message}</p><p className="mt-3 text-xs text-[#61715a]">{run.cursor} businesses considered · {run.images} image requests · {run.reviews} vision requests · {run.reused} checks reused · {run.approvedIds.length} approved</p></div>
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold">{busy ? "Discovery in progress" : run.status === "running" ? "Discovery paused — ready to resume" : run.status === "error" ? "Discovery stopped safely" : "Discovery summary"}</p><p className="mt-2 text-sm text-[#52624d]">{run.message.replace("Choose Find more to continue.", "Start another discovery batch to find more.")}</p><p className="mt-3 text-xs text-[#61715a]">{run.cursor} businesses considered · {run.images} image requests · {run.reviews} vision requests · {run.reused} checks reused · {run.approvedIds.length} approved</p></div>
         {run.status === "running" && <div className="flex gap-2">{busy ? <button className={button} onClick={() => { continuing.current = false; }}><Pause size={14} />Pause after this step</button> : <><button className={button} onClick={resume}><Play size={14} />Resume</button><button className={button} onClick={cancel}>Cancel run</button></>}</div>}
       </div>
       {run.attempts.length > 0 && <details className="mt-4 text-xs"><summary className="cursor-pointer font-semibold">View decisions and rejected attempts ({run.attempts.length})</summary><ul className="mt-3 max-h-64 space-y-3 overflow-auto">{run.attempts.map((attempt, index) => <li key={index}><span className="font-semibold">{attempt.venueName} · {attempt.outcome}{attempt.reused ? " · reused" : ""}</span><p className="mt-1 text-[#62705d]">{attempt.reason}</p></li>)}</ul></details>}
     </div>}
-    {tab === "approved" && <>
+    <div id="approved-venues" className="mt-9 border-t border-[#d2d9cb] pt-6">
+      <div className="mb-3 flex items-center gap-3"><h3 className="font-serif text-2xl">Approved venues</h3><span className="rounded-full bg-[#e0e8d8] px-2.5 py-1 text-xs font-semibold text-[#506b46]">{venues.length}</span></div>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><p className="text-xs text-[#738171]">Saved decisions, not projects. Browsing this list makes no image or vision requests.</p><label className="flex items-center gap-2 border-b border-[#b8c5b4] px-2"><Search size={15} /><input aria-label="Filter approved venues" value={filter} onChange={event => setFilter(event.target.value)} placeholder="Name, area or postcode" className="bg-transparent py-2 text-sm outline-none" /></label></div>
-      {loading ? <p role="status" className="py-12 text-center text-sm">Loading approved venues…</p> : shown.length ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{shown.map(venue => <ApprovedCard key={`${venue.venue.placeId}:${venue.review.checkedAt}`} item={venue} disabled={busy || run?.status === "running"} onReassess={() => void start(venue.venue, true)} onRemoved={() => setVenues(old => old.filter(v => v.venue.placeId !== venue.venue.placeId))} />)}</div> : <div className="border border-dashed border-[#b8c6b2] bg-[#f7f7ef] px-6 py-14 text-center"><MapPin size={28} className="mx-auto mb-4 text-[#698264]" /><h2 className="font-serif text-2xl">{filter ? "No matching approved venues" : "Your shortlist starts here"}</h2><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#697267]">{filter ? "Try another name or area." : "Run discovery once. Accepted entrances will be saved here, ready to reopen without another vision review."}</p><button className={`${primary} mt-5`} onClick={() => setTab("discover")}>Discover new venues <ArrowRight size={15} /></button></div>}
-    </>}
-    {tab === "discover" && run?.approvedIds.length ? <button className={primary} onClick={() => setTab("approved")}>View approved venues <ArrowRight size={15} /></button> : null}
+      {loading ? <p role="status" className="py-8 text-center text-sm">Loading approved venues…</p> : shown.length ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{shown.map(venue => <ApprovedCard key={`${venue.venue.placeId}:${venue.review.checkedAt}`} item={venue} disabled={busy || run?.status === "running"} onReassess={() => void start(venue.venue, true)} onRemoved={() => setVenues(old => old.filter(v => v.venue.placeId !== venue.venue.placeId))} />)}</div> : <div className="flex items-center gap-4 border border-dashed border-[#b8c6b2] bg-[#f7f7ef] p-6"><MapPin size={25} className="shrink-0 text-[#698264]" /><div><h4 className="font-serif text-xl">{filter ? "No matching approved venues" : "Your shortlist starts here"}</h4><p className="mt-1 text-sm leading-6 text-[#697267]">{filter ? "Try another name or area." : "Use Discover above. Suitable entrances will be saved here without filling your project library."}</p></div></div>}
+    </div>
   </section>;
 }
 
@@ -153,6 +149,7 @@ function ApprovedCard({ item, disabled, onReassess, onRemoved }: { item: Approve
       <p className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider ${stale ? "text-[#946334]" : "text-[#527343]"}`}><CheckCircle2 size={13} />{stale ? "Needs reassessment" : "Automatically approved"}</p>
       <h2 className="mt-3 font-serif text-2xl">{item.venue.name}</h2><p className="mt-2 text-xs leading-5 text-[#697267]">{item.venue.address}</p>
       <p className="mt-4 text-sm leading-6 text-[#52624c]">{item.review.assessment.reason}</p>
+      {!!item.review.assessment.issues?.length && <p className="mt-2 text-xs leading-5 text-[#8b714c]">Usable with caveats: {item.review.assessment.issues.join("; ")}</p>}
       <p className="mt-3 text-[11px] text-[#7b8575]">Checked {new Date(item.review.checkedAt).toLocaleDateString("en-GB")} · {item.review.frame.source === "streetview" ? "Street View" : "Venue photo"}</p>
       <a href={item.venue.mapsUrl} target="_blank" rel="noreferrer" className="mt-2 text-xs underline">View on Google Maps</a>
       {item.review.frame.source === "places-photo" && <div className="mt-2 text-xs text-[#697267]">Photo: {item.review.frame.attribution.map((a, i) => a.uri ? <a className="mr-2 underline" key={i} href={a.uri} target="_blank" rel="noreferrer">{a.name}</a> : <span className="mr-2" key={i}>{a.name}</span>)}</div>}
