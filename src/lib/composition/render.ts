@@ -10,7 +10,7 @@ import { outputDimensions, placementGeometry, projectedPoint } from "./geometry"
 import { sourceKey } from "./store";
 import { findGroundContacts } from "./contacts";
 
-export const COMPOSITION_ENGINE = 4;
+export const COMPOSITION_ENGINE = 5;
 
 // Premultiplied-alpha affine sampling keeps fine leaves clean when changing the guide's angle.
 async function warpCutout(bytes: Buffer, geometry: ReturnType<typeof placementGeometry>, width: number, height: number) {

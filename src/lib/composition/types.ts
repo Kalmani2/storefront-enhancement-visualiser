@@ -33,7 +33,7 @@ export type CompositionVersion = {
   width: number; height: number; model?: string; quality?: "medium"; usage?: unknown;
   engine?: number; fingerprint?: string; sourceFile?: string; review?: RenderReview;
   estimatedCostUsd?: number; alignment?: { dx: number; dy: number; error: number };
-  installationFile?: string; rawFile?: string;
+  installationFile?: string; rawFile?: string; reusedFromVersionId?: string;
 };
 export type CompositionState = {
   sourceKey: string; draft: Placement[]; calibrations: Record<string, ScaleEstimate>;

@@ -1,5 +1,13 @@
 # Real-product storefront composition
 
+## Current default: complete image (11 October)
+
+At the customer's request, engine 5 uses the **entire GPT Image 2 Medium output**. It sends no placement edit mask and applies no alignment, regional blending, original-background restoration or artificial contact shadows to the final scene. The complete native PNG is retained byte for byte when its dimensions match the requested canvas. Model input includes the placement guide, the original storefront at full output resolution and the product references. The prompt asks for minimal changes and explicitly protects geometry, brick courses, lettering, people, camera framing, pavement and original photographic texture.
+
+This avoids the visible seams observed at Thirst Bar Soho, where the model's changed background was spliced into an incompatible original background. It does not guarantee pixel-identical source details: the full output is generated, so compare it with the original before export. This default supersedes the spot-edit decision and preservation claims below.
+
+The previous spot-return implementation is retained in `src/lib/composition/scene.ts` (`composeScene` and `sceneEditMask`) and the engine 4 branches of `jobs.ts`, including recovery of unfinished old jobs. Existing outputs remain in the project history and are labelled **Spot render**; new outputs are labelled **Full image**. Engine 5 has a separate fingerprint so it cannot accidentally reuse a previous spot result. Medium, model, output dimensions and the one-image-call policy remain the same, so the pricing basis is unchanged.
+
 ## Current rendering decision (11 October)
 
 The customer explicitly selected ROBATA Version 3 as the desired visual standard after comparing it with the transparent-layer experiment. **AI Enhance now defaults to GPT Image 2 Medium scene editing.** The model receives the rough placement, untouched scene and product references, and renders a finished installation within the photograph. An RGBA edit mask identifies the placement neighbourhood. Software aligns the generated scene on surrounding features and blends it only into that region, restoring original pixels elsewhere and throughout the attribution footer.

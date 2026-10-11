@@ -1,8 +1,16 @@
 import sharp from "sharp";
 import { clamp } from "./geometry";
 
+// Keep the complete model output. In particular, do not align or splice it into
+// the source: small perspective changes otherwise create broken background edges.
+export async function completeScene(generated: Buffer, width: number, height: number) {
+  const metadata = await sharp(generated).metadata();
+  if (metadata.width !== width || metadata.height !== height) throw new Error("The image model returned unexpected scene dimensions. The raw render is saved.");
+  return { enhanced: generated };
+}
+
 // Scene editing lets the model solve perspective, reflections and ground contact
-// together. Only the placement neighbourhood is taken from that generated scene.
+// together. Retained for recovering older spot renders (engine 4).
 export async function composeScene(original: Buffer, generated: Buffer, region: Buffer, width: number, height: number) {
   if (region.length !== width * height) throw new Error("Invalid scene edit region.");
   const reference = await sharp(original).removeAlpha().greyscale().raw().toBuffer();

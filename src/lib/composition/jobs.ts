@@ -7,7 +7,7 @@ import { revisionFile } from "../planters/types";
 import { readComposition, readCompositionFile, writeComposition, writeCompositionFile, sourceKey } from "./store";
 import { renderComposition, COMPOSITION_ENGINE } from "./render";
 import { composeInstallation } from "./installation";
-import { composeScene, sceneEditMask } from "./scene";
+import { completeScene, composeScene, sceneEditMask } from "./scene";
 import { ANALYSIS_VERSION, estimateScale } from "./scale";
 import { reviewComposition } from "./quality";
 import { estimateKey, type Placement, type CompositionState, type CompositionVersion } from "./types";
@@ -58,13 +58,14 @@ Ground anchor at ${(p.x * 100).toFixed(1)}% across and ${(p.y * 100).toFixed(1)}
 Scene geometry: ${analysis?.scene?.perspective || "Match the existing pavement and facade perspective."} Lighting: ${analysis?.scene?.light || "Match the ambient daylight and softness in image 2."} Ground shadow preference: ${Math.round(p.shadow * 100)}% strength; keep shadows natural and local.`;
   }).join("\n\n");
   const layer = version.engine === 3;
+  const wholeScene = (version.engine || 0) >= 5;
   return `${layer ? "Create a transparent RGBA installation layer containing ONLY the real planter arrangements and their soft contact/cast shadows, ready to composite over this exact storefront photograph." : "Create a convincing photograph of this actual storefront with the supplied real planter products physically installed."}
 IMAGE ROLES: Image 1 is the edit target: a deliberately rough placement guide showing where each arrangement belongs and its intended scale. The pasted products in it are NOT finished photography. Image 2 is the untouched original storefront: authoritative for architecture, people, pavement, signage, camera and lighting. Images 3 onward are the exact product references: authoritative for container design and planting.
 ${descriptions}
 Reconstruct each planter arrangement in the camera perspective of image 2. You MUST change the visible faces, top openings, foreshortening, occlusion and relative base heights as needed to put solid upright containers on this pavement. Preserve the actual product design, container count, characteristic colours/material and planting species/colour palette. Reproject rather than replace with a generic product. The same arrangement may appear at several marked locations: reproduce it at each, with consistent design.
 Make every base physically touch the pavement at its own perspective-correct point. Add subtle contact occlusion and soft cast shadows consistent with the scene; unify exposure, white balance, reflected light, local contrast, sharpness, grain and depth of field. The product must share the street photograph's camera and daylight, not retain bright studio lighting or unnaturally crisp cutout edges. Natural leaf and branch changes from the new viewpoint are allowed.
 Preserve the intended occupied region and overall size from image 1, with small geometric corrections for realistic perspective. Preserve all original people and respect foreground/background occlusion. Keep the entrance passable. Remove any residual pasted silhouette or artificial oval shadow from image 1 as you rebuild the product and its real shadow.
-${layer ? "OUTPUT: real PNG alpha transparency. Output ONLY the repositioned, relit planter products and softly fading semi-transparent black/neutral ground shadows. ALL buildings, windows, doors, pavement, people, signs, sky and surroundings must be completely transparent. No visible floor plane, white backdrop or drawn checkerboard. Keep the arrangements' intended positions on the same transparent canvas." : "The original building, windows, doors, signs, readable lettering, people, objects and image framing must remain exactly as in image 2, except where the new products naturally occlude them or cast shadows. Work inside the supplied edit regions. No detached floor patch, duplicate plants, decorative additions, new text, camera move or global restyling. Return one final photograph with exactly the same framing and dimensions as image 1. Integrate the products directly into this street photograph: preserve natural environmental reflections, perspective, local daylight and contact with the existing pavement. Do not return an isolated product or transparent layer."}`;
+${wholeScene ? "OUTPUT: one complete, coherent finished photograph, with exactly the same framing and dimensions as image 1. Your entire returned image will be used directly. Treat image 2 as a photographic record: preserve the exact building geometry, window and door positions, brick courses, facade materials, shutters, pavement joints, road markings, signs, addresses, lettering, attribution, people, their poses and clothes, and existing objects. Copy readable lettering faithfully without inventing or correcting words. Keep the same camera position, lens, perspective, crop, daylight, exposure and original photographic texture. Do not straighten the building, move facade edges, sharpen or beautify the whole scene, remove people, remodel the pavement or redesign the business. Make the smallest necessary changes to install the supplied products and their natural shadows/reflections. Reconstruct and relight the products to fit the original scene, rather than changing the scene to fit the products. Do not return an isolated product, a transparent layer, a cropped patch or a comparison." : layer ? "OUTPUT: real PNG alpha transparency. Output ONLY the repositioned, relit planter products and softly fading semi-transparent black/neutral ground shadows. ALL buildings, windows, doors, pavement, people, signs, sky and surroundings must be completely transparent. No visible floor plane, white backdrop or drawn checkerboard. Keep the arrangements' intended positions on the same transparent canvas." : "The original building, windows, doors, signs, readable lettering, people, objects and image framing must remain exactly as in image 2, except where the new products naturally occlude them or cast shadows. Work inside the supplied edit regions. No detached floor patch, duplicate plants, decorative additions, new text, camera move or global restyling. Return one final photograph with exactly the same framing and dimensions as image 1. Integrate the products directly into this street photograph: preserve natural environmental reflections, perspective, local daylight and contact with the existing pavement. Do not return an isolated product or transparent layer."}`;
 }
 
 function estimatedCost(model: string, usage: { input_tokens_details?: { image_tokens?: number; text_tokens?: number }; output_tokens_details?: { image_tokens?: number; text_tokens?: number }; output_tokens?: number }) {
@@ -78,7 +79,7 @@ export async function recoverComposition(project: Project, versionId: string) {
   return locked(`composition:${project.id}`, async () => {
     const state = await readComposition(project), version = state.versions.find(v => v.id === versionId);
     if (state.job) throw new PlanterError("An enhancement is already running.", 409);
-    if (!version?.rawFile || version.enhancedFile || ![3, COMPOSITION_ENGINE].includes(version.engine || 0)) throw new PlanterError("There is no unfinished saved render to recover.");
+    if (!version?.rawFile || version.enhancedFile || ![3, 4, COMPOSITION_ENGINE].includes(version.engine || 0)) throw new PlanterError("There is no unfinished saved render to recover.");
     state.job = { id: randomUUID(), versionId, startedAt: new Date().toISOString(), stage: "checking" };
     state.resultVersionId = versionId; delete state.error;
     await writeComposition(project.id, state); return state;
@@ -111,12 +112,12 @@ export async function runEnhancement(project: Project, jobId: string) {
     form.set("model", model); form.set("prompt", prompt); form.set("quality", "medium"); form.set("size", `${canvasWidth}x${canvasHeight}`); form.set("output_format", "png"); form.set("n", "1");
     const layerMode = version.engine === 3;
     form.set("background", layerMode ? "transparent" : "opaque");
-    if (!layerMode) {
+    if (!layerMode && (version.engine || 0) < 5) {
       const mask = await sharp(await sceneEditMask(region, version.width, version.height)).resize(width, height).extend({ ...padding, background: { r: 255, g: 255, b: 255, alpha: 1 } }).png().toBuffer();
       form.set("mask", new Blob([new Uint8Array(mask)], { type: "image/png" }), "edit-region.png");
     }
     if (model === "gpt-image-1.5" || model === "gpt-image-1") form.set("input_fidelity", "high");
-    const images = [padded, await sharp(original).resize({ width: 960, height: 960, fit: "inside" }).png().toBuffer(), ...references];
+    const images = [padded, (version.engine || 0) >= 5 ? original : await sharp(original).resize({ width: 960, height: 960, fit: "inside" }).png().toBuffer(), ...references];
     images.forEach((image, i) => form.append("image[]", new Blob([new Uint8Array(image)], { type: "image/png" }), `input-${i + 1}.png`));
     attempt = version.rawFile ? JSON.parse((await readCompositionFile(project.id, `${version.id}-attempt.json`)).toString()) : { model, quality: "medium", engine: COMPOSITION_ENGINE, prompt, status: "rendering", startedAt: state.job!.startedAt, fingerprint: version.fingerprint, placements: version.placements };
     await writeCompositionFile(project.id, `${version.id}-attempt.json`, Buffer.from(JSON.stringify(attempt, null, 2)));
@@ -129,9 +130,10 @@ export async function runEnhancement(project: Project, jobId: string) {
     attempt = { ...attempt, rawFile, usage: payload.usage, status: "checking" };
     await writeCompositionFile(project.id, `${version.id}-attempt.json`, Buffer.from(JSON.stringify(attempt, null, 2)));
     await locked(`composition:${project.id}`, async () => { const current = await readComposition(project); if (current.job?.id === jobId) { current.job.stage = "checking"; Object.assign(current.versions.find(v => v.id === version.id)!, { rawFile, model, usage: payload.usage, estimatedCostUsd: payload.usage ? estimatedCost(model, payload.usage) : undefined }); await writeComposition(project.id, current); } });
-    const fitted = await sharp(raw).resize(canvasWidth, canvasHeight).extract({ left, top, width, height }).resize(version.width, version.height).png().toBuffer();
+    // Preserve native pixels when the returned scene already matches the canvas.
+    const fitted = !legacy && (version.engine || 0) >= 5 ? raw : await sharp(raw).resize(canvasWidth, canvasHeight).extract({ left, top, width, height }).resize(version.width, version.height).png().toBuffer();
     const sourceWidth = project.image?.provider === "google-street-view" || project.image?.provider === "uploaded" ? project.image.width || version.width : version.width;
-    const composed = layerMode
+    const composed = (version.engine || 0) >= 5 ? await completeScene(fitted, version.width, version.height) : layerMode
       ? await composeInstallation(original, fitted, foreground, region, version.width, version.height, sourceWidth, version.placements.reduce((sum, p) => sum + p.shadow, 0) / version.placements.length)
       : await composeScene(original, fitted, region, version.width, version.height);
     const suffix = version.rawFile ? `-${randomUUID()}` : "";
@@ -143,11 +145,12 @@ export async function runEnhancement(project: Project, jobId: string) {
       return `Arrangement ${i + 1} at (${p.x.toFixed(2)}, ${p.y.toFixed(2)}) normalised ground position: ${a?.product?.containerCount || "reference"} containers; ${a?.product?.description || "supplied product"}.`;
     }).join("\n"));
     const estimatedCostUsd = payload.usage ? estimatedCost(model, payload.usage) : undefined;
-    await writeCompositionFile(project.id, `${version.id}-attempt.json`, Buffer.from(JSON.stringify({ ...attempt, status: "complete", review, alignment: composed.alignment, estimatedCostUsd, finishedAt: new Date().toISOString() }, null, 2)));
+    const alignment = "alignment" in composed ? composed.alignment : undefined;
+    await writeCompositionFile(project.id, `${version.id}-attempt.json`, Buffer.from(JSON.stringify({ ...attempt, status: "complete", review, alignment, estimatedCostUsd, finishedAt: new Date().toISOString() }, null, 2)));
     await locked(`composition:${project.id}`, async () => {
       const current = await readComposition(project);
       if (current.job?.id !== jobId) return;
-      Object.assign(current.versions.find(v => v.id === version.id)!, { enhancedFile, installationFile, model, quality: "medium", usage: payload.usage, review, estimatedCostUsd, alignment: composed.alignment });
+      Object.assign(current.versions.find(v => v.id === version.id)!, { enhancedFile, installationFile, model, quality: "medium", usage: payload.usage, review, estimatedCostUsd, alignment });
       delete current.job; delete current.error; await writeComposition(project.id, current);
     });
   } catch (error) {

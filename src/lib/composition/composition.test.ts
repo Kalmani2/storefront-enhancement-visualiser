@@ -9,7 +9,7 @@ import { parsePlacements, readComposition, readCompositionFile, writeComposition
 import { createComposition, runEnhancement, recoverComposition } from "./jobs";
 import { estimateScale } from "./scale";
 import { composeInstallation } from "./installation";
-import { composeScene, sceneEditMask } from "./scene";
+import { completeScene, composeScene, sceneEditMask } from "./scene";
 import { findGroundContacts, measureContainerFraction } from "./contacts";
 import type { Placement } from "./types";
 
@@ -81,7 +81,7 @@ describe("composition outputs", () => {
     expect(pixel(1, pixels.info.height - 1)).toEqual([170, 187, 204]);
     expect(fetcher).not.toHaveBeenCalled(); expect(state.versions).toHaveLength(1);
   });
-  it("renders a new product view in Medium, protects the source and reuses unchanged layouts", async () => {
+  it("returns the complete Medium image without a spot mask or merge and reuses unchanged layouts", async () => {
     const generated = await sharp({ create: { width: 1280, height: 960, channels: 3, background: "red" } }).png().toBuffer();
     const fetcher = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("images/edits") ? { data: [{ b64_json: generated.toString("base64") }], usage: { input_tokens_details: { image_tokens: 1000, text_tokens: 100 }, output_tokens: 349 } } : { output: [{ content: [{ type: "output_text", text: JSON.stringify({ product: 4, grounding: 4, scene: 5, summary: "Good", issues: [], fatal: false }) }] }] }), { status: 200 }));
     vi.stubGlobal("fetch", fetcher);
@@ -92,17 +92,13 @@ describe("composition outputs", () => {
     expect(saved.error).toBeUndefined(); expect(saved.job).toBeUndefined(); expect(version.quality).toBe("medium");
     const calls = fetcher.mock.calls.filter(c => c[0].includes("images/edits")); expect(calls).toHaveLength(1);
     const form = calls[0][1].body as FormData;
-    expect(form.get("quality")).toBe("medium"); expect(form.get("size")).toBe("1280x960"); expect(form.get("model")).toBe("gpt-image-2"); expect(form.get("background")).toBe("opaque"); expect(form.get("mask")).toBeTruthy(); expect(form.get("prompt")).toContain("convincing photograph"); expect(form.getAll("image[]")).toHaveLength(3);
-    const source = await sharp(await readCompositionFile(project.id, version.sourceFile!)).ensureAlpha().raw().toBuffer();
-    const enhanced = await sharp(await readCompositionFile(project.id, version.enhancedFile!)).ensureAlpha().raw().toBuffer();
-    const mask = await sharp(await readCompositionFile(project.id, version.maskFile!)).greyscale().raw().toBuffer();
-    let changed = 0;
-    for (let p = 0; p < mask.length; p++) {
-      const before = source.subarray(p * 4, p * 4 + 4), after = enhanced.subarray(p * 4, p * 4 + 4);
-      if (mask[p] < 4 && !before.equals(after)) throw new Error('Protected source pixel changed: ' + p);
-      if (!before.equals(after)) changed++;
-    }
-    expect(changed).toBeGreaterThan(100);
+    expect(form.get("quality")).toBe("medium"); expect(form.get("size")).toBe("1280x960"); expect(form.get("model")).toBe("gpt-image-2"); expect(form.get("background")).toBe("opaque"); expect(form.get("mask")).toBeNull(); expect(form.get("prompt")).toContain("convincing photograph"); expect(form.getAll("image[]")).toHaveLength(3);
+    expect(version.engine).toBe(5);
+    expect(form.get("prompt")).toContain("Your entire returned image will be used directly");
+    expect(form.get("prompt")).toContain("Copy readable lettering faithfully");
+    const enhanced = await readCompositionFile(project.id, version.enhancedFile!);
+    expect(enhanced.equals(generated)).toBe(true);
+    expect(version.alignment).toBeUndefined();
     expect(version.review?.status).toBe("passed"); expect(version.estimatedCostUsd).toBeGreaterThan(0);
     const cached = await createComposition(project, [{ ...placement, id: "44444444-4444-4444-8444-444444444444" }], true);
     expect(cached.versions).toHaveLength(1); expect(cached.job).toBeUndefined(); expect(cached.resultVersionId).toBe(version.id);
@@ -116,6 +112,15 @@ describe("composition outputs", () => {
     let saved = await readComposition(project); expect(saved.error).toContain("Temporary write failure"); expect(saved.versions[0].rawFile).toBeTruthy(); expect(saved.versions[0].enhancedFile).toBeUndefined();
     const recovery = await recoverComposition(project, saved.versions[0].id); await runEnhancement(project, recovery.job!.id);
     saved = await readComposition(project); expect(saved.error).toBeUndefined(); expect(saved.versions[0].enhancedFile).toBeTruthy(); expect(fetcher.mock.calls.filter(c => c[0].includes("images/edits"))).toHaveLength(1);
+  });
+  it("keeps existing spot versions and their files when creating a full-image version", async () => {
+    const state = await readComposition(project);
+    const old = { id: "44444444-4444-4444-8444-444444444444", engine: 4, createdAt: new Date().toISOString(), placements: [placement], basicFile: "old-basic.png", enhancedFile: "old-spot.png", width: 1280, height: 960 };
+    state.versions.push(old); await writeComposition(project.id,state);
+    memory.files.set('compositions/'+project.id+'/old-spot.png',Buffer.from('saved spot output'));
+    const saved = await createComposition(project,[placement],false);
+    expect(saved.versions).toHaveLength(2); expect(saved.versions[0]).toEqual(old); expect(saved.versions[1].engine).toBe(5);
+    expect((await readCompositionFile(project.id,'old-spot.png')).toString()).toBe('saved spot output');
   });
   it("retains the basic image on API failure and never retries automatically", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "No credits" } }), { status: 429 })); vi.stubGlobal("fetch", fetcher);
@@ -155,6 +160,11 @@ describe("perspective and isolation", () => {
 
 
 describe("scene integration", () => {
+  it("keeps the full output byte for byte and rejects unexpected dimensions", async () => {
+    const generated = await sharp({ create: { width: 100, height: 100, channels: 3, background: "red" } }).png().toBuffer();
+    expect((await completeScene(generated,100,100)).enhanced.equals(generated)).toBe(true);
+    await expect(completeScene(generated,200,100)).rejects.toThrow("unexpected scene dimensions");
+  });
   it("allows complete perspective reconstruction inside the region while preserving the scene and attribution outside", async () => {
     const width = 100, height = 100;
     const original = await sharp({ create: { width, height, channels: 4, background: "blue" } }).png().toBuffer();
