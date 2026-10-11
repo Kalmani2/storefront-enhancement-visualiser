@@ -12,6 +12,7 @@ import { composeInstallation } from "./installation";
 import { completeScene, composeScene, sceneEditMask } from "./scene";
 import { findGroundContacts, measureContainerFraction } from "./contacts";
 import type { Placement } from "./types";
+vi.mock("../usage-budget", () => ({ reservePaidRequest: vi.fn() }));
 
 const memory = vi.hoisted(() => ({ files: new Map<string, Buffer>(), asset: {} as PlanterAsset, planter: Buffer.alloc(0), failEnhancedWrite: false }));
 vi.mock("../storage", () => ({

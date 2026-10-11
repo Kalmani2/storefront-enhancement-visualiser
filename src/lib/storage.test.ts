@@ -25,7 +25,7 @@ beforeEach(async () => {
   vi.stubEnv("SUPABASE_STORAGE_BUCKET", "test-assets");
   vi.stubEnv("OPENAI_API_KEY", "test-never-sent");
   vi.stubEnv("VERCEL", "1");
-  vi.stubEnv("ENABLE_HOSTED_EXTRACTION", "false");
+  vi.stubEnv("ENABLE_PAID_AI", "false");
   tables = { planters: new Map(), projects: new Map(), renders: new Map() };
   files = new Map(); calls = [];
   source = await sharp({ create: { width: 160, height: 240, channels: 3, background: "#61734d" } }).png().toBuffer();
@@ -286,7 +286,9 @@ describe("Supabase-backed shared library", () => {
   it("permits same-origin hosted saves but blocks cross-origin writes and hosted paid extraction", () => {
     const request = new Request("https://demo.example/api/planters", { headers: { origin: "https://demo.example" } });
     expect(() => requireMutation(request)).not.toThrow();
-    expect(() => requireLocalMutation(request)).toThrow("Paid extraction is disabled");
+    expect(() => requireLocalMutation(request)).toThrow("AI processing is unavailable");
+    vi.stubEnv("ENABLE_PAID_AI", "true");
+    expect(() => requireLocalMutation(request)).not.toThrow();
     expect(() => requireMutation(new Request(request.url, { headers: { origin: "https://attacker.example" } }))).toThrow("directly");
   });
 });

@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { paidAiEnabled, DAILY_LIMITS } from "@/lib/usage-budget";
 import { deleteCompositionVersion } from "@/lib/composition/versions";
 import { getProject } from "@/lib/project-store";
 import { locked } from "@/lib/planters/store";
@@ -15,7 +16,7 @@ export const maxDuration = 300;
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, context: Context) {
-  try { return Response.json({ ...(await readComposition(await getProject((await context.params).id))), model: compositionModel(), configured: Boolean(process.env.OPENAI_API_KEY) && (process.env.VERCEL !== "1" || process.env.ENABLE_HOSTED_EXTRACTION === "true") }, { headers: { "Cache-Control": "no-store" } }); }
+  try { return Response.json({ ...(await readComposition(await getProject((await context.params).id))), model: compositionModel(), configured: paidAiEnabled(), dailyLimits: DAILY_LIMITS }, { headers: { "Cache-Control": "no-store" } }); }
   catch (error) { return planterFailure(error); }
 }
 
@@ -31,8 +32,7 @@ export async function POST(request: Request, context: Context) {
       return await locked(`composition:${project.id}`, async () => {
         const state = await readComposition(project);
         if (state.calibrations[key]?.analysisVersion !== ANALYSIS_VERSION) {
-          // Hosted paid endpoints remain subject to the existing deployment opt-in.
-          if (process.env.VERCEL !== "1" || process.env.ENABLE_HOSTED_EXTRACTION === "true") state.calibrations[key] = await estimateScale(project, assetId, revisionId);
+          if (paidAiEnabled()) state.calibrations[key] = await estimateScale(project, assetId, revisionId);
           else { const { fallbackEstimate } = await import("@/lib/composition/geometry"); state.calibrations[key] = fallbackEstimate(assetId, revisionId); }
           await writeComposition(project.id, state);
         }

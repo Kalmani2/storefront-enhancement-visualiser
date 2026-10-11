@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ExternalLink, LoaderCircle, MapPin, Search } from "lucide-react";
-import { FrontageDiscovery } from "@/components/frontage-discovery";
+import { FrontageDiscovery, type FrontageDiscoveryHandle } from "@/components/frontage-discovery";
 import { StreetViewPicker, type StreetViewSelection } from "@/components/street-view-picker";
 import type { GoogleSearchResult, GoogleVenue } from "@/lib/google/types";
 import { findProject, saveProject, type Project } from "@/lib/projects";
@@ -17,7 +17,7 @@ export function VenueSearch() {
   const [searching, setSearching] = useState(false), [error, setError] = useState("");
   const [projectError, setProjectError] = useState(""), [projectTitle, setProjectTitle] = useState("");
   const [savingProject, setSavingProject] = useState(false);
-  const [requestedVenue, setRequestedVenue] = useState<GoogleVenue>();
+  const discovery = useRef<FrontageDiscoveryHandle>(null);
 
   function choose(venue: GoogleVenue) {
     if (selected?.placeId === venue.placeId) return;
@@ -31,6 +31,7 @@ export function VenueSearch() {
       const result = await response.json() as GoogleSearchResult & { error?: string };
       if (!response.ok) throw new Error(result.error || "Venue search failed.");
       setResults(result);
+      if (result.venues[0]) { setSelected(result.venues[0]); setProjectTitle(result.venues[0].name); }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Venue search failed."); }
     finally { setSearching(false); }
   }
@@ -78,12 +79,12 @@ export function VenueSearch() {
         <aside aria-label="Places" className="relative min-h-0 border border-[#d9d5c9] bg-[#f8f7f0]"><div className="max-h-[360px] overflow-y-auto lg:absolute lg:inset-0 lg:max-h-none">{results.venues.map(venue => <button key={venue.placeId} aria-pressed={selected?.placeId === venue.placeId} onClick={() => choose(venue)} className={`w-full border-b border-[#e3e2d8] p-5 text-left hover:bg-[#e9eee3] ${selected?.placeId === venue.placeId ? "bg-[#e1e9dc] shadow-[inset_3px_0_0_#315f43]" : ""}`}><span className="block font-serif text-xl">{venue.name}</span><span className="mt-1 block text-xs leading-5 text-[#6e7a6e]">{venue.address}</span></button>)}</div></aside>
         <div className="min-w-0 border border-[#d9d5c9] bg-[#f9f8f2]">{selected ? <>
           <div className="flex flex-wrap justify-between gap-3 border-b border-[#deded2] p-5"><div><p className="text-[11px] uppercase tracking-wider text-[#688069]">{selected.category}</p><h3 className="mt-2 font-serif text-3xl">{selected.name}</h3><p className="mt-2 text-sm text-[#697267]">{selected.address}</p></div><a href={selected.mapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-[#1d5a42]">Google Maps <ExternalLink size={12} /></a></div>
-          <div className="border-b border-[#deded2] p-5"><button onClick={() => { setRequestedVenue(selected); document.getElementById("approved-discovery")?.scrollIntoView({ behavior: "smooth" }); }} className="bg-[#254e3b] px-4 py-2.5 text-sm font-semibold text-white">Check this frontage automatically</button><p className="mt-2 text-xs text-[#738171]">Or choose your own view below. Manual selection is not automatic approval.</p></div>
+          <div className="border-b border-[#deded2] p-5"><button onClick={() => { discovery.current?.check(selected); document.getElementById("approved-discovery")?.scrollIntoView({ behavior: "smooth" }); }} className="bg-[#254e3b] px-4 py-2.5 text-sm font-semibold text-white">Check this frontage automatically</button><p className="mt-2 text-xs text-[#738171]">One check runs the assessment, retries and fallback photos. Or choose your own view below.</p></div>
           <StreetViewPicker key={selected.placeId} venue={selected} onSelection={setFrame} />
           <div className="space-y-3 border-t border-[#deded2] p-5"><label className="block text-xs font-semibold">Project name<input maxLength={160} value={projectTitle} onChange={event => setProjectTitle(event.target.value)} className="mt-2 w-full border border-[#bfcbbd] bg-[#fffefa] px-3 py-3 text-sm" /></label><button disabled={savingProject || !frame || !projectTitle.trim()} onClick={createProject} className="flex w-full items-center justify-between bg-[#204f39] px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-50">{savingProject ? "Saving project…" : "Save project to library"}<ArrowRight size={16} /></button>{projectError && <p role="alert" className="text-sm text-[#9a584d]">{projectError}</p>}</div>
         </> : <div className="grid min-h-[350px] place-items-center p-8 text-center"><div><MapPin className="mx-auto mb-4 text-[#7b9578]" size={25} /><p className="font-serif text-2xl">Choose a place to view its frontage.</p></div></div>}</div>
       </div>}
     </section>}
-    <FrontageDiscovery requestedVenue={requestedVenue} onRequestHandled={() => setRequestedVenue(undefined)} />
+    <FrontageDiscovery ref={discovery} />
   </>;
 }

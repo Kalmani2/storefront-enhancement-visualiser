@@ -21,6 +21,7 @@ function setup(count = 1) {
   const run = freshRun("12345678-1234-1234-1234-123456789012", "Soho", "all");
   const cache = new Map<string, AssessmentRecord>(), approved = new Map<string, ApprovedVenue>();
   const dep: typeof dependencies = {
+    savePreview: vi.fn().mockResolvedValue(undefined),
     search: vi.fn().mockResolvedValue({ location: "Soho", category: "all", venues: Array.from({ length: count }, (_, i) => ({ ...venue, placeId: `${venue.placeId}${i}` })) }),
     venue: vi.fn().mockResolvedValue(venue), cameras: vi.fn().mockResolvedValue([frame, { ...frame, panoId: "camera2" }]),
     available: vi.fn().mockResolvedValue(true), image: vi.fn().mockImplementation(async (_venue, f) => ({ frame: f, bytes, contentType: "image/jpeg" })),
@@ -153,7 +154,7 @@ describe("source retrieval and spending consent", () => {
     const request = new Request("http://localhost/api/frontage-discovery");
     expect(() => requireDiscoveryConsent(request, false)).toThrow(/Confirm/);
     expect(() => requireDiscoveryConsent(new Request(request, { headers: { origin: "https://other-site.example" } }), true)).toThrow();
-    vi.stubEnv("VERCEL", "1"); expect(() => requireDiscoveryConsent(request, true)).toThrow(/Hosted/);
-    vi.stubEnv("ENABLE_HOSTED_DISCOVERY", "true"); expect(() => requireDiscoveryConsent(request, true)).not.toThrow();
+    vi.stubEnv("VERCEL", "1"); expect(() => requireDiscoveryConsent(request, true)).not.toThrow();
+    vi.stubEnv("ENABLE_PAID_AI", "false"); expect(() => requireDiscoveryConsent(request, true)).toThrow(/disabled/);
   });
 });

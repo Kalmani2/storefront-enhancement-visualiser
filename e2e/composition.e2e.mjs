@@ -3,7 +3,7 @@ import sharp from "sharp";
 
 test("Studio image selection, numeric scale, automatic shadows and AI image download", async ({ page }) => {
   const assetId = "11111111-1111-4111-8111-111111111111", revisionId = "22222222-2222-4222-8222-222222222222";
-  const project = { id: "google-composer-test", title: "Frith Street proposal", address: "12 Frith Street, London", category: "restaurant", source: "google", venueId: "place1234", sourceUrl: "https://maps.google.com", createdAt: new Date().toISOString(), image: { provider: "google-street-view", panoId: "camera", headingOffset: 0, fov: 65, storagePath: "storefronts/google-composer-test/source.png" } };
+  const project = { id: "google-composer-test", title: "Frith Street proposal", address: "12 Frith Street, London", category: "restaurant", notes: "Automatically assessed 2026-10-11. Clear sign and entrance.\nSource: streetview. Image reuse rights asserted by user, not verified by this app.\nPlace planters beside the entrance.", source: "google", venueId: "place1234", sourceUrl: "https://maps.google.com", createdAt: new Date().toISOString(), image: { provider: "google-street-view", panoId: "camera", headingOffset: 0, fov: 65, storagePath: "storefronts/google-composer-test/source.png" } };
   const frontage = await sharp(Buffer.from('<svg width="960" height="640"><rect width="960" height="640" fill="#ddd1b7"/><rect y="500" width="960" height="140" fill="#999c91"/><rect x="100" y="90" width="760" height="85" fill="#284d3b"/><text x="480" y="145" text-anchor="middle" fill="white" font-size="38">FRITH STREET CAFE</text><rect x="220" y="210" width="260" height="250" fill="#466565"/><rect x="560" y="200" width="140" height="300" fill="#315347"/><rect x="577" y="220" width="106" height="180" fill="#8ca6a2"/></svg>')).png().toBuffer();
   const planter = await sharp(Buffer.from('<svg width="120" height="240"><path d="M35 165 L85 165 L80 235 L40 235Z" fill="#625647"/><ellipse cx="60" cy="105" rx="40" ry="65" fill="#365a2f"/></svg>')).png().toBuffer();
   const asset = { id: assetId, name: "Olive planter", status: "approved", approvedRevisionId: revisionId, revisions: [{ id: revisionId, width: 120, height: 240, contactPoint: { x: .5, y: .98 } }] };
@@ -38,6 +38,8 @@ test("Studio image selection, numeric scale, automatic shadows and AI image down
   });
   await page.goto(`/studio?id=${project.id}`);
   await expect(page.getByRole("heading", { name: project.title })).toBeVisible();
+  await expect(page.getByText("Automatically assessed", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Place planters beside the entrance.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Place Olive planter" })).toBeEnabled();
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
   await page.getByRole("button", { name: "Place Olive planter" }).click();

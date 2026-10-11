@@ -4,6 +4,8 @@ A prototype for the Innate AI take-home task: discover London venues, inspect st
 
 Built with Next.js, TypeScript, Tailwind CSS, shadcn/ui and Lucide icons.
 
+Demo: [Storefront Visualiser](https://storefront-enhancement-visualiser.vercel.app). Start at **Library → Submission examples** for DUCKSOUP, Salon64 and KOZZEE, or use Venue search to try the workflow yourself.
+
 ## Features
 
 - Automatic frontage discovery: mixed business searches, entrance/identity/placement checks, one Street View retry and Google Places photo fallback. Approved venues are saved separately from projects and reused without repeated vision calls.
@@ -36,7 +38,7 @@ Copy `.env.example` to `.env.local` and add keys for the features you want:
 
 For a new Supabase project, run `supabase/migrations/202610100001_shared_library.sql` in its SQL Editor once. To copy an existing local planter library, run `npm run import:planters`. It uploads and verifies existing files without generating images or deleting local originals.
 
-For automatic discovery, also run `supabase/migrations/202610110001_frontage_discovery.sql`. Open **Venue search**, enter an area under **Discover**, and select **Discover 3 venues**. Defaults: 3 new approvals, at most 10 businesses and 20 image/vision requests. Approved views and failed checks are reused. Refreshing pauses a run; Resume explicitly continues its existing budget. `OPENAI_FRONTAGE_MODEL` defaults to `gpt-4.1-mini`. Set `ENABLE_HOSTED_DISCOVERY=true` in Vercel only when you want to enable confirmed paid discovery there; saved previews do not invoke vision. Image reuse requires appropriate rights, independent of visual approval.
+For automatic discovery, also run `supabase/migrations/202610110001_frontage_discovery.sql`. Open **Venue search**, enter an area under **Discover**, and select **Discover 3 venues**. Defaults: 3 new approvals, at most 10 businesses and 20 image/vision requests. Approved views and failed checks are reused. Refreshing pauses a run; Resume explicitly continues its existing budget. `OPENAI_FRONTAGE_MODEL` defaults to `gpt-4.1-mini`. Local and deployed discovery use the same settings. Image reuse requires appropriate rights, independent of visual approval.
 
 Keep secret API keys server-side; Supabase's publishable key is intended for browser use. Never commit `.env.local`. External API calls may incur charges.
 
@@ -52,13 +54,19 @@ Open [localhost:3000](http://localhost:3000). Start with **Venue Search**, or up
 
 Projects, planter metadata and planter image versions are saved in Supabase. Current browser projects are imported on the next Library visit, keeping a browser backup. The selected Google Street View is saved with the project and loaded automatically in Studio; no storefront upload is needed. Existing Google projects fetch their selected frame once on first opening. This workflow assumes the project owner's stated permission to use, edit and export these images. Mapillary remains a reference in the alternative discovery flow. Street View candidates still need visual inspection.
 
-The top Search bar returns up to five London matches in one Text Search request, without prospect category or chain filters. Choose a match and either check its frontage automatically or load and choose a view manually. Discover below performs the automated prospect selection and image checks; manual project saves are not automatic approvals. Framing changes reuse views already loaded in the current session.
+The top Search bar returns up to five London matches. The first match is selected and up to five Street View frames load automatically; selecting another match loads its views. Direction/framing changes load automatically too, reusing previously loaded frames. Failed requests require an explicit retry. **Check this frontage automatically** starts the complete assessment/retry/fallback flow from one button, with one spending confirmation. Discover below performs automated prospect selection; manual project saves are not automatic approvals.
 
 Venue search background: [London photograph from Unsplash](https://images.unsplash.com/photo-1513635269975-59663e0ac1ad), bundled locally in `public/london-skyline.jpg`.
 
 Both local and Vercel apps use the same Supabase library. Uploads go directly to private storage; downloads use short-lived signed links. With no Supabase configuration, the local planter tool can still use `output/planters/`. Configured cloud failures never fall back to local files.
 
-This is one shared demo workspace, not a private multi-user application. App library endpoints are public; database access is server-side and browser keys cannot query the tables directly. Keep sensitive data out. Paid planter extraction and AI Enhance are disabled on Vercel by default; `ENABLE_HOSTED_EXTRACTION=true` explicitly enables them. This flag is not authentication. Composition metadata and output versions use the private bucket under `compositions/<project-id>/`; no additional database migration is required.
+This is one shared demo workspace, not a private multi-user application. App library endpoints are public; database access is server-side and browser keys cannot query the tables directly. Keep sensitive data out. Extraction, composition and discovery work on Vercel whenever their keys are present, just as locally. Composition metadata and outputs use the private bucket under `compositions/<project-id>/`.
+
+## Deployment and reasonable limits
+
+Set the same Google, OpenAI and Supabase environment variables in Vercel as locally, use Node 24, and redeploy the latest commit. No new migration is needed for limits. The old `ENABLE_HOSTED_EXTRACTION` and `ENABLE_HOSTED_DISCOVERY` flags are no longer used; optional `ENABLE_PAID_AI=false` is an emergency stop in either environment.
+
+The shared workspace allows **20 extraction requests, 40 composition requests and 200 vision assessments per UTC day**. These are request limits, not dollar guarantees; counts include attempted/failed requests and reset at 00:00 UTC. Local and Vercel use the same counters when connected to the same bucket. Create-only storage receipts reserve slots atomically across instances; a storage error stops the paid request. Cached outputs and basic editing/export do not consume slots. Recovery of an existing generated image consumes no new composition slot, but may use a vision assessment. Google imagery/search charges are separate; direct search automatically retrieves at most five frames for the selected venue, and each discovery run retains its existing 20-image cap.
 
 ## Storefront composition
 

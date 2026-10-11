@@ -74,3 +74,29 @@ test("manage shared library details and confirm deletions on desktop and mobile"
   expect(calls.some(call => /extract|composition|google|discovery/.test(call.replace("google-demo", "demo")))).toBe(false);
   expect(errors).toEqual([]);
 });
+
+
+test("library action rows align for short and wrapped names", async ({ page }) => {
+  const image = await sharp({ create: { width: 640, height: 480, channels: 3, background: "#b7c7a8" } }).png().toBuffer();
+  const names = ["Soho cafe", "The Long Named Independent Coffee House and Neighbourhood Restaurant"];
+  const projects = names.map((title, index) => ({ id: `google-layout-${index}`, title, address: index ? "12 Frith Street, Soho, London W1D 4PY" : "1 Dean Street", source: "google", sourceUrl: "https://maps.google.com", image: { provider: "uploaded", storagePath: "front.png" } }));
+  const assets = names.map((name, index) => ({ id: `11111111-1111-4111-8111-11111111111${index}`, name, status: "approved", revisions: [] }));
+  await page.route("**/api/**", route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/projects") return route.fulfill({ json: projects });
+    if (path === "/api/planters") return route.fulfill({ json: { assets, configured: true } });
+    if (path.endsWith("/image") || path.includes("/files/")) return route.fulfill({ contentType: "image/png", body: image });
+    return route.fulfill({ status: 500, json: { error: "Unexpected API request" } });
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: `Edit planter ${names[1]}` })).toBeVisible();
+  for (const kind of ["project", "planter"]) {
+    const rows = await Promise.all(names.map(name => page.getByRole("button", { name: `Edit ${kind} ${name}` }).locator("..").locator("..").boundingBox()));
+    expect(rows[0].height).toBe(44); expect(rows[1].height).toBe(44);
+    expect(rows[0].y).toBe(rows[1].y);
+  }
+  await page.screenshot({ path: ".cache/library-aligned-cards.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

@@ -1,7 +1,7 @@
-import React from "react";
+import React, { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { FrontageDiscovery } from "./frontage-discovery";
+import { FrontageDiscovery, type FrontageDiscoveryHandle } from "./frontage-discovery";
 import { RULES_VERSION, type ApprovedVenue } from "../lib/frontage/types";
 
 const approved: ApprovedVenue = {
@@ -12,7 +12,7 @@ const approved: ApprovedVenue = {
     verdict: "approved", assessment: { identity: "confirmed", exterior: true, entranceVisible: true, framingUsable: true, placementSpace: true, underDressed: true, imageQuality: true, issues: [], reason: "Correct signage and clear pavement.", action: "accept", entranceBox: null } },
 };
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(Response.json({ venues: [approved] }))));
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async url => String(url).includes("approved-venues") ? new Response("image", { headers: { "Content-Type": "image/jpeg" } }) : Response.json({ venues: [approved] })));
   vi.spyOn(window, "confirm").mockReturnValue(false);
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:approved-image");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
@@ -20,28 +20,42 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("approved shortlist controls", () => {
-  it("browses and filters stored approvals without making paid image requests", async () => {
+  it("starts a named venue check from the parent action without a second panel button", async () => {
+    const ref = createRef<FrontageDiscoveryHandle>();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(fetch).mockImplementation(async (_url, options) => options?.method === "POST" ? Response.json({ id: "run", status: "complete", approvedIds: [], attempts: [], message: "Finished" }) : Response.json({ venues: [] }));
+    render(<><button onClick={() => ref.current?.check(approved.venue)}>Check once</button><FrontageDiscovery ref={ref} /></>);
+    await screen.findByText("Your shortlist starts here");
+    fireEvent.click(screen.getByRole("button", { name: "Check once" }));
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1));
+    expect(JSON.parse(vi.mocked(fetch).mock.calls.find(([, options]) => options?.method === "POST")![1]!.body as string)).toMatchObject({ placeId: approved.venue.placeId, confirmed: true });
+    expect(screen.queryByRole("button", { name: "Find best frontage" })).not.toBeInTheDocument();
+    expect(window.confirm).toHaveBeenCalledOnce();
+  });
+  it("automatically loads approved previews and filters without another image request", async () => {
     render(<FrontageDiscovery />);
     expect(await screen.findByText("Test Cafe")).toBeVisible();
-    expect(fetch).toHaveBeenCalledTimes(1);
+    await screen.findByAltText("Assessed entrance of Test Cafe");
+    expect(fetch).toHaveBeenCalledTimes(2);
     fireEvent.change(screen.getByLabelText("Filter approved venues"), { target: { value: "elsewhere" } });
     expect(screen.queryByText("Test Cafe")).not.toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
-  it("requires confirmation both for loading a preview and starting new discovery", async () => {
-    render(<FrontageDiscovery />); fireEvent.click(await screen.findByRole("button", { name: "Load approved view" }));
-    expect(fetch).toHaveBeenCalledTimes(1);
+  it("loads previews automatically but still confirms new discovery", async () => {
+    render(<FrontageDiscovery />); await screen.findByAltText("Assessed entrance of Test Cafe");
+    expect(fetch).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "Discover 3 venues" }));
-    expect(window.confirm).toHaveBeenCalledTimes(2); expect(fetch).toHaveBeenCalledTimes(1);
+    expect(window.confirm).toHaveBeenCalledTimes(1); expect(fetch).toHaveBeenCalledTimes(2);
   });
   it("does not send a new assessment when reopening a saved image", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(fetch).mockImplementation(async (url) => String(url).includes("approved-venues") ? new Response("image", { headers: { "Content-Type": "image/jpeg" } }) : Response.json({ venues: [approved] }));
-    render(<FrontageDiscovery />); fireEvent.click(await screen.findByRole("button", { name: "Load approved view" }));
+    render(<FrontageDiscovery />); await screen.findByAltText("Assessed entrance of Test Cafe");
     expect(await screen.findByAltText("Assessed entrance of Test Cafe")).toBeVisible();
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("button", { name: "Create project" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.queryByRole("button", { name: "Create project" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add project to library" }));
     expect(screen.getByRole("button", { name: "Create project" })).toBeEnabled();
   });
   it("restores a running job as paused instead of resuming spend on mount", async () => {
@@ -53,8 +67,8 @@ describe("approved shortlist controls", () => {
   });
   it("removes a shortlist entry without calling any project deletion endpoint", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    vi.mocked(fetch).mockImplementation(async (_url, options) => options?.method === "DELETE" ? Response.json({ removed: true }) : Response.json({ venues: [approved] }));
-    render(<FrontageDiscovery />); fireEvent.click(await screen.findByRole("button", { name: "Remove Test Cafe from shortlist" }));
+    vi.mocked(fetch).mockImplementation(async (_url, options) => options?.method === "DELETE" ? Response.json({ removed: true }) : String(_url).includes("approved-venues") ? new Response("image", { headers: { "Content-Type": "image/jpeg" } }) : Response.json({ venues: [approved] }));
+    render(<FrontageDiscovery />); await screen.findByAltText("Assessed entrance of Test Cafe"); await waitFor(() => expect(screen.getByRole("button", { name: "Remove Test Cafe from shortlist" })).toBeEnabled()); fireEvent.click(screen.getByRole("button", { name: "Remove Test Cafe from shortlist" }));
     await waitFor(() => expect(screen.queryByText("Test Cafe")).not.toBeInTheDocument());
     expect(vi.mocked(fetch).mock.calls.at(-1)?.[0]).toBe("/api/approved-venues/testplace1234");
   });

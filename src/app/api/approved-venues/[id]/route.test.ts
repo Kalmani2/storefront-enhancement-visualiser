@@ -1,18 +1,18 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { POST, DELETE } from "./route";
+import { GET, POST, DELETE } from "./route";
 import { fingerprint } from "@/lib/frontage/assessment";
 import { getApproved, markApproved } from "@/lib/frontage/store";
 import { frameAvailable, fetchFrontageImage } from "@/lib/frontage/images";
 import { getProject, storeGoogleFrontage, storeFrontage } from "@/lib/project-store";
 import { PlanterError } from "@/lib/planters/validation";
 import { RULES_VERSION, type ApprovedVenue } from "@/lib/frontage/types";
-import { storageClient } from "@/lib/storage";
+import { storageClient, getFile, putFile } from "@/lib/storage";
 
 vi.mock("@/lib/frontage/store", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/frontage/store")>(), getApproved: vi.fn(), markApproved: vi.fn() }));
 vi.mock("@/lib/frontage/images", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/frontage/images")>(), frameAvailable: vi.fn(), fetchFrontageImage: vi.fn() }));
 vi.mock("@/lib/project-store", () => ({ getProject: vi.fn(), storeGoogleFrontage: vi.fn(), storeFrontage: vi.fn() }));
-vi.mock("@/lib/storage", () => ({ storageClient: vi.fn() }));
+vi.mock("@/lib/storage", () => ({ storageClient: vi.fn(), getFile: vi.fn(), putFile: vi.fn() }));
 
 const bytes = Buffer.from("verified-original");
 const approved = { venue: { placeId: "testplace1234", name: "Test Cafe", address: "1 Test Street", category: "cafe", mapsUrl: "https://maps.google.com" }, status: "approved",
@@ -20,12 +20,14 @@ const approved = { venue: { placeId: "testplace1234", name: "Test Cafe", address
     frame: { source: "streetview", panoId: "pano", heading: 80, pitch: -8, fov: 75, copyright: "© Google" } } } as ApprovedVenue;
 const context = { params: Promise.resolve({ id: approved.venue.placeId }) };
 function request(body: unknown) { return new Request("http://localhost/api/approved-venues/testplace1234", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
-function upload(content = bytes, rights = true) {
-  const body = new FormData(); body.set("image", new Blob([content]), "preview.jpg"); body.set("assessmentId", approved.review.id); body.set("title", "My cafe project"); if (rights) body.set("rightsConfirmed", "true");
+function upload(content = bytes) {
+  const body = new FormData(); body.set("image", new Blob([content]), "preview.jpg"); body.set("assessmentId", approved.review.id); body.set("title", "My cafe project");
   return new Request("http://localhost/api/approved-venues/testplace1234", { method: "POST", body });
 }
 const insert = vi.fn().mockResolvedValue({ error: null });
 beforeEach(() => {
+  vi.mocked(getFile).mockRejectedValue(new PlanterError("Missing", 404));
+  vi.mocked(putFile).mockResolvedValue(undefined);
   vi.mocked(getApproved).mockResolvedValue(structuredClone(approved));
   vi.mocked(frameAvailable).mockResolvedValue(true);
   vi.mocked(fetchFrontageImage).mockResolvedValue({ bytes, frame: approved.review.frame, contentType: "image/jpeg" });
@@ -36,8 +38,25 @@ beforeEach(() => {
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs(); });
 
 describe("approved-image reuse and project hand-off", () => {
-  it("will not retrieve any image without confirmation", async () => {
+  it("will not retrieve via legacy POST without confirmation", async () => {
     expect((await POST(request({}), context)).status).toBe(400); expect(fetchFrontageImage).not.toHaveBeenCalled();
+  });
+  it("serves cached previews automatically without requesting Google again", async () => {
+    vi.mocked(getFile).mockResolvedValue(bytes);
+    const result = await GET(new Request("http://localhost/preview"), context);
+    expect(result.status).toBe(200); expect(Buffer.from(await result.arrayBuffer())).toEqual(bytes);
+    expect(fetchFrontageImage).not.toHaveBeenCalled(); expect(frameAvailable).not.toHaveBeenCalled();
+  });
+  it("caches missing previews after verifying the assessed image", async () => {
+    expect((await GET(new Request("http://localhost/preview"), context)).status).toBe(200);
+    expect(putFile).toHaveBeenCalledWith(`approved-frontages/${approved.review.id}/image.jpg`, bytes, true, "image/jpeg");
+  });
+  it("does not request Google on storage outages or corrupted cached previews", async () => {
+    vi.mocked(getFile).mockRejectedValue(new PlanterError("Offline", 502));
+    expect((await GET(new Request("http://localhost/preview"), context)).status).toBe(502);
+    vi.mocked(getFile).mockResolvedValue(Buffer.from("corrupt"));
+    expect((await GET(new Request("http://localhost/preview"), context)).status).toBe(502);
+    expect(fetchFrontageImage).not.toHaveBeenCalled();
   });
   it("retrieves a matching approved frame without running vision", async () => {
     const result = await POST(request({ confirmed: true }), context);
@@ -53,8 +72,7 @@ describe("approved-image reuse and project hand-off", () => {
     vi.mocked(fetchFrontageImage).mockResolvedValue({ bytes: Buffer.from("different-store"), frame: approved.review.frame, contentType: "image/jpeg" });
     expect((await POST(request({ confirmed: true }), context)).status).toBe(409); expect(markApproved).toHaveBeenCalledWith(approved.venue.placeId, "stale");
   });
-  it("requires rights confirmation and verifies the uploaded preview fingerprint", async () => {
-    expect((await POST(upload(bytes, false), context)).status).toBe(400);
+  it("verifies the uploaded preview fingerprint", async () => {
     expect((await POST(upload(Buffer.from("substitute")), context)).status).toBe(409);
     expect(insert).not.toHaveBeenCalled(); expect(storeGoogleFrontage).not.toHaveBeenCalled();
   });

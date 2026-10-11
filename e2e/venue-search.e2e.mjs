@@ -7,7 +7,14 @@ test("Search above Discover, group loading, framing and project saving", async (
   const jpeg = await sharp({ create: { width: 640, height: 420, channels: 3, background: "#a9b9a0" } }).jpeg().toBuffer();
   const queries = [], imageCalls = [], errors = [];
   const projects = [];
-  await page.route("**/api/frontage-discovery", route => route.fulfill({ json: { venues: [] } }));
+  const checks = [];
+  await page.route("**/api/frontage-discovery", route => {
+    if (route.request().method() === "POST") {
+      checks.push(route.request().postDataJSON());
+      return route.fulfill({ json: { id: "test-run", status: "complete", approvedIds: [], attempts: [], cursor: 1, images: 1, reviews: 1, reused: 0, message: "Check complete" } });
+    }
+    return route.fulfill({ json: { venues: [] } });
+  });
   await page.route("**/api/projects", route => {
     if (route.request().method() === "POST") {
       const { project } = route.request().postDataJSON();
@@ -50,21 +57,22 @@ test("Search above Discover, group loading, framing and project saving", async (
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Project library", exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Planter library", exact: true })).toHaveCount(0);
-  await page.getByRole("complementary", { name: "Places" }).getByRole("button").click();
   await expect(page.getByRole("heading", { name: venue.name })).toBeVisible();
   expect(queries[0]).toEqual({ mode: "direct", query: "49 Frith Street" });
-  expect(imageCalls).toHaveLength(0);
   await expect(page.getByRole("button", { name: "Load selected view only" })).toHaveCount(0);
   await expect(page.getByLabel("Project name")).toHaveValue(venue.name);
-  await expect(page.getByRole("button", { name: "Save project to library" })).toBeDisabled();
-  await page.getByRole("button", { name: "Load 2 views", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Load 2 views", exact: true })).toHaveCount(0);
   await expect(page.getByAltText(`Street View of ${venue.name}`)).toBeVisible();
   await expect(page.getByRole("button", { name: "Save project to library" })).toBeEnabled();
-  expect(imageCalls).toHaveLength(2);
+  await expect.poll(() => imageCalls.length).toBe(2);
+  await page.getByRole("button", { name: "Check this frontage automatically" }).click();
+  await expect.poll(() => checks.length).toBe(1);
+  expect(checks[0]).toMatchObject({ placeId: venue.placeId, confirmed: true });
+  await expect(page.getByRole("button", { name: "Find best frontage" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "View 2", exact: false })).toBeEnabled();
   await page.getByRole("button", { name: "View 2", exact: false }).click();
   await page.getByLabel("Framing").selectOption("45");
-  await expect(page.getByRole("button", { name: "Save project to library" })).toBeDisabled();
-  await page.getByRole("button", { name: "Load 1 view", exact: true }).click();
+  await expect.poll(() => imageCalls.length).toBe(3);
   await expect(page.getByRole("button", { name: "Save project to library" })).toBeEnabled();
   expect(imageCalls.at(-1)).toMatchObject({ candidateToken: "signed-1", fov: 45 });
   await page.getByLabel("Project name").fill("Frith Street proposal");

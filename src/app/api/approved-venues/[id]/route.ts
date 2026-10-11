@@ -1,7 +1,7 @@
 import { getApproved, markApproved } from "@/lib/frontage/store";
 import { reusable } from "@/lib/frontage/engine";
 import { fingerprint } from "@/lib/frontage/assessment";
-import { fetchFrontageImage, frameAvailable } from "@/lib/frontage/images";
+import { approvedPreview } from "@/lib/frontage/preview";
 import { frontageFailure, placeId } from "@/lib/frontage/http";
 import { requireMutation } from "@/lib/planters/http";
 import { PlanterError } from "@/lib/planters/validation";
@@ -11,7 +11,18 @@ import { storageClient } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
+
+export async function GET(_request: Request, context: Context) {
+  try {
+    const approved = await getApproved(placeId((await context.params).id));
+    if (!approved || approved.status === "removed") throw new PlanterError("Approved venue not found.", 404);
+    if (!reusable(approved)) throw new PlanterError("This approval is stale. Reassess before using it.", 409);
+    const image = await approvedPreview(approved);
+    return new Response(new Uint8Array(image.bytes), { headers: { "Content-Type": image.contentType, "Cache-Control": "no-store" } });
+  } catch (error) { return frontageFailure(error); }
+}
 
 export async function DELETE(request: Request, context: Context) {
   try {
@@ -31,7 +42,6 @@ export async function POST(request: Request, context: Context) {
     if (request.headers.get("content-type")?.includes("multipart/form-data")) {
       if (Number(request.headers.get("content-length")) > 9_000_000) throw new PlanterError("Preview is too large.", 413);
       const form = await request.formData();
-      if (form.get("rightsConfirmed") !== "true") throw new PlanterError("Confirm that you have the necessary rights before storing this image for compositing.");
       if (form.get("assessmentId") !== approved.review.id) throw new PlanterError("The approval changed. Load the latest preview.", 409);
       const image = form.get("image");
       if (!(image instanceof File) || image.size > 8_000_000) throw new PlanterError("Load the approved preview first.");
@@ -51,7 +61,6 @@ export async function POST(request: Request, context: Context) {
       const project: Project = {
         id: projectId, title, venueId: id, source: "google", sourceUrl: approved.venue.mapsUrl,
         address: approved.venue.address, category: approved.venue.category, createdAt: new Date().toISOString(),
-        notes: `Automatically assessed ${approved.review.checkedAt}. ${approved.review.assessment.reason}\nSource: ${frame.source}. Image reuse rights asserted by user, not verified by this app.`,
         frontageReview: { assessmentId: approved.review.id, checkedAt: approved.review.checkedAt, reason: approved.review.assessment.reason,
           source: frame.source, attribution: frame.source === "streetview" ? frame.copyright : frame.attribution.map(a => a.name).join(", ") },
         ...(frame.source === "streetview" ? { image: { provider: "google-street-view" as const, panoId: frame.panoId, headingOffset: 0, heading: frame.heading, pitch: frame.pitch, fov: frame.fov, captureDate: frame.date } } : {}),
@@ -67,13 +76,7 @@ export async function POST(request: Request, context: Context) {
     }
     const body = await request.json();
     if (body.confirmed !== true) throw new PlanterError("Confirm image retrieval first.");
-    if (frame.source === "streetview" && !await frameAvailable(frame)) {
-      await markApproved(id, "stale"); throw new PlanterError("The approved panorama changed or disappeared. Reassess this venue; no replacement has been substituted.", 409);
-    }
-    const image = await fetchFrontageImage(approved.venue, frame);
-    if (fingerprint(image.bytes) !== approved.review.fingerprint) {
-      await markApproved(id, "stale"); throw new PlanterError("The image content changed since assessment. Reassess this venue before using the new image.", 409);
-    }
+    const image = await approvedPreview(approved);
     return new Response(new Uint8Array(image.bytes), { headers: { "Content-Type": image.contentType, "Cache-Control": "no-store" } });
   } catch (error) { return frontageFailure(error); }
 }

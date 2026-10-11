@@ -1,4 +1,5 @@
 import type { FrontageImage, ImageAttempt, Venue } from "./types";
+import { reservePaidRequest } from "../usage-budget";
 
 type Assessment = {
   venueMatch: "confirmed" | "uncertain" | "no";
@@ -24,6 +25,7 @@ const schema = {
 export async function assessImage(venue: Venue, image: FrontageImage): Promise<ImageAttempt> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
+  await reservePaidRequest("vision");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },

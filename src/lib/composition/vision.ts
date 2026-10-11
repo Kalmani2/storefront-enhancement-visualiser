@@ -1,9 +1,11 @@
 import sharp from "sharp";
+import { reservePaidRequest } from "../usage-budget";
 
 export function visionModel() { return process.env.OPENAI_COMPOSITION_VISION_MODEL || "gpt-4.1"; }
 
 export async function analyseImages<T>(name: string, prompt: string, images: Buffer[], schema: object, maxTokens = 1400, model = visionModel()): Promise<{ value: T; usage?: unknown }> {
   const urls = await Promise.all(images.map(async image => `data:image/png;base64,${(await sharp(image).flatten({ background: "#ededE5" }).resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true }).png().toBuffer()).toString("base64")}`));
+  await reservePaidRequest("vision");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, signal: AbortSignal.timeout(50_000),
     body: JSON.stringify({ model, store: false, max_output_tokens: maxTokens,

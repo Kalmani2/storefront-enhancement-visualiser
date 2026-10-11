@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { FolderOpen, Search, Sprout } from "lucide-react";
+import { FolderOpen, Search } from "lucide-react";
+import { BrandMark } from "./brand-mark";
 
 type Section = "library" | "discover";
 
@@ -12,7 +13,7 @@ export function AppHeader({ active }: { active: Section }) {
   return <header className="border-b border-[#d8dbd0] bg-[#f8f8f1]">
     <div className="mx-auto flex max-w-[1460px] flex-wrap items-center justify-between gap-5 px-6 py-4 md:px-10">
       <Link href="/" className="flex items-center gap-3" aria-label="Storefront Visualiser home">
-        <span className="grid h-10 w-10 place-items-center rounded-sm bg-[#1c4938] text-[#ecf1e9]"><Sprout size={22} strokeWidth={1.7} /></span>
+        <BrandMark />
         <span className="text-[12px] font-bold uppercase leading-[1.25] tracking-[0.16em] text-[#234231]">Storefront<br /><span className="font-medium">Visualiser</span></span>
       </Link>
       <nav aria-label="Primary navigation" className="flex items-center gap-1 rounded-sm border border-[#d6dbd0] bg-[#f0f1e8] p-1">

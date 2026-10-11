@@ -20,8 +20,8 @@ export function contentType(file: string) {
   return file.endsWith(".json") ? "application/json" : file.endsWith(".png") ? "image/png" : file.endsWith(".webp") ? "image/webp" : "image/jpeg";
 }
 
-export async function putFile(key: string, bytes: Buffer, upsert = false) {
-  const { error } = await storageClient().storage.from(storageBucket()).upload(key, bytes, { contentType: contentType(key), upsert });
+export async function putFile(key: string, bytes: Buffer, upsert = false, mimeType = contentType(key)) {
+  const { error } = await storageClient().storage.from(storageBucket()).upload(key, bytes, { contentType: mimeType, upsert });
   if (error) throw new PlanterError(`Image storage failed: ${error.message}`, 502);
 }
 

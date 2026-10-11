@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { reservePaidRequest } from "../usage-budget";
 import sharp from "sharp";
 import type { Project } from "../projects";
 import { locked, readAssetFile } from "../planters/store";
@@ -121,6 +122,7 @@ export async function runEnhancement(project: Project, jobId: string) {
     images.forEach((image, i) => form.append("image[]", new Blob([new Uint8Array(image)], { type: "image/png" }), `input-${i + 1}.png`));
     attempt = version.rawFile ? JSON.parse((await readCompositionFile(project.id, `${version.id}-attempt.json`)).toString()) : { model, quality: "medium", engine: COMPOSITION_ENGINE, prompt, status: "rendering", startedAt: state.job!.startedAt, fingerprint: version.fingerprint, placements: version.placements };
     await writeCompositionFile(project.id, `${version.id}-attempt.json`, Buffer.from(JSON.stringify(attempt, null, 2)));
+    if (!version.rawFile) await reservePaidRequest("composition");
     const response = version.rawFile ? null : await fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, body: form, signal: AbortSignal.timeout(process.env.VERCEL === "1" ? 200_000 : 360_000) });
     const payload = response ? await response.json() : { data: [{ b64_json: (await readCompositionFile(project.id, version.rawFile!)).toString("base64") }], usage: attempt.usage };
     if (response && !response.ok) throw new Error(payload.error?.message || `AI render failed (${response.status}).`);

@@ -1,118 +1,91 @@
-# Real-product storefront composition
+﻿# Design: storefront capture and planter visualisation
 
-## Current default: complete image (11 October)
+## Approach
 
-At the customer's request, engine 5 uses the **entire GPT Image 2 Medium output**. It sends no placement edit mask and applies no alignment, regional blending, original-background restoration or artificial contact shadows to the final scene. The complete native PNG is retained byte for byte when its dimensions match the requested canvas. Model input includes the placement guide, the original storefront at full output resolution and the product references. The prompt asks for minimal changes and explicitly protects geometry, brick courses, lettering, people, camera framing, pavement and original photographic texture.
+Google Places supplies London prospects; Street View or Places photos supply their real entrances. The client's product photographs become reusable planter assets, then scene-aware visualisations. Next.js serves the interface and APIs; Supabase stores discovery decisions, projects, product revisions and renders.
 
-This avoids the visible seams observed at Thirst Bar Soho, where the model's changed background was spliced into an incompatible original background. It does not guarantee pixel-identical source details: the full output is generated, so compare it with the original before export. This default supersedes the spot-edit decision and preservation claims below.
+Venue selection and image acceptance are automatic. An operator chooses the product and adjusts its placement. The output is a visual proposal, not a measured installation plan.
 
-The previous spot-return implementation is retained in `src/lib/composition/scene.ts` (`composeScene` and `sceneEditMask`) and the engine 4 branches of `jobs.ts`, including recovery of unfinished old jobs. Existing outputs remain in the project history and are labelled **Spot render**; new outputs are labelled **Full image**. Engine 5 has a separate fingerprint so it cannot accidentally reuse a previous spot result. Medium, model, output dimensions and the one-image-call policy remain the same, so the pricing basis is unchanged.
+## Automated venue selection
 
-## Current rendering decision (11 October)
+An area search combines cafes, restaurants and salons within a London boundary, deduplicates listings and ranks operational businesses with physical street addresses. A known-chain exclusion list screens for likely independents; ownership is not independently verified.
 
-The customer explicitly selected ROBATA Version 3 as the desired visual standard after comparing it with the transparent-layer experiment. **AI Enhance now defaults to GPT Image 2 Medium scene editing.** The model receives the rough placement, untouched scene and product references, and renders a finished installation within the photograph. An RGBA edit mask identifies the placement neighbourhood. Software aligns the generated scene on surrounding features and blends it only into that region, restoring original pixels elsewhere and throughout the attribution footer.
+`gpt-4.1-mini` assesses photographs through a structured response. Application code requires:
 
-This produces stronger integration of camera perspective, reflected light, exposure and ground contact than the isolated-layer experiment described below. It allows reconstruction of the product in context. It also means local background details inside the edit neighbourhood may change. The assignment's strict requirement for an entirely unaltered building is therefore not guaranteed by this mode; inspect the before/after view. The customer's preference for Version 3 is recorded explicitly, rather than claiming its previous review concerns disappeared.
+- Visible evidence confirming the expected business, normally matching signage.
+- A usable exterior view of the actual entrance.
+- Visible ground for at least one planter beside the entrance.
+- Bare or lightly planted frontage with room for improvement.
+- Sufficient image quality to judge the doorway and ground.
 
-Version 3 was originally passed by automated review, then manually marked rejected over window/person changes. Following the customer's explicit acceptance, it is approved and downloadable, retaining its review notes. Flagged results can also be approved through the interface, and approved results are labelled **Approved**, not **Checks passed**. The most recently produced or approved render is restored on opening the project.
+Wrong or uncertain identity, interiors, hidden entrances, unusable ground and substantial existing planting cannot pass. Moderate perspective and pedestrians away from the placement area are recorded as caveats.
 
-The restored scene method uses the same default model and Medium quality as Version 3, with one paid request and no automatic image retries. A new ROBATA test cost approximately **$0.0674** for image generation plus its review call. It is stored as Version 7 and under `output/robata-scene-example/`. Existing transparent renders remain in history. The transparent processing path is retained only to recover unfinished older jobs; it is no longer the default.
+## Image sourcing and fallback
 
-The sections below record the earlier experiment and its constraints; this decision supersedes their transparent-layer default and automatic rejection policy.
+Street geometry and nearby outdoor panorama probes produce cameras ranked by distance, angle and capture date. Initial heading points toward the venue location. Stored framing includes panorama ID, camera coordinates, heading, horizontal field of view (FOV), pitch, dimensions and capture date. A nearby camera does not prove venue identity.
 
-## Objective and source images
+For an identified but poorly framed entrance, normalized doorway coordinates drive correction:
 
-The Innate AI assignment asks for a convincing installation of actual client products while leaving the existing building and scene unaltered. This implementation uses the Street View photograph already selected and saved by Venue Search, plus an approved transparent planter asset. It does not require another storefront upload. Plants and their containers remain one arrangement; a pair retains both containers.
+```text
+heading correction = atan((2 * entranceCentreX - 1) * tan(FOV / 2))
+```
 
-The Google workflow now includes automatic frontage discovery as well as manual camera selection (see the discovery section below). Saved camera references include absolute heading, field of view and pitch. A newer, clearer photograph remains preferable to synthesising missing storefront detail. Attribution is retained. Neither API access nor a property owner's permission automatically grants the photographer's or Google's reuse rights; image rights remain a separate requirement from visual approval.
+Pitch aims below the doorway centre to include pavement. Corrections are bounded to 30 degrees of heading, FOV 45–90 degrees and pitch −20–15 degrees. Corrected images are reassessed; wrong-facing or obstructed views try another camera.
 
-## Pipeline
+Each venue receives at most two Street View attempts, then two Places photos under the same acceptance criteria. If none passes, it is skipped. The system never fabricates a replacement storefront. API errors are recorded separately from unsuitable venues.
 
-1. **Extract and approve the product.** Existing Medium extraction removes the background and reconstructs obstructed product areas when needed. Approval remains a human product-identity check. PNG alpha, a cropped mask and placement anchor are retained. New revisions also record separate ground contacts from their lower alpha silhouette. Existing approved assets are analysed on demand without regenerating them.
-2. **Analyse the scene and reference once.** A structured vision response describes a complete doorway/person/chair reference, assumed height, pavement slope, entrance, lighting, product shape and container count. Alpha and colour analysis estimate container image height independently of foliage and find each base. Results are cached by saved storefront and approved revision; changing the source invalidates the composition state.
-3. **Calculate a starting scale.** At the reference depth, full arrangement height in image fractions is `reference_pixel_height / assumed_reference_metres * assumed_container_metres / container_image_fraction`. Street View FOV, image aspect ratio and its configured downward pitch give an approximate horizon. Moving toward the camera scales the arrangement by its ground distance below that horizon relative to the reference base, with conservative bounds. Unknown physical dimensions, raised door thresholds and inaccurate vision coordinates limit accuracy. A fallback is explicitly labelled low confidence. The user can adjust visual size without entering metres.
-4. **Place freely on a fast canvas.** Ground anchors are normalised coordinates. Browser preview and server basic export share the same affine geometry: depth scaling, turn guide, flip and base-slope adjustment. Sampling uses premultiplied alpha to avoid coloured leaf fringes. Each detected container gets its own soft ground contact. Dragging, nudging, duplicating and exporting a basic image make no image-generation calls. This preview cannot reconstruct hidden 3D surfaces.
-5. **Render the product's new view.** One Medium image edit receives the rough placement guide, the untouched storefront as context, and deduplicated product references. The prompt identifies each arrangement, count, material, planting, scale, ground position and requested angle. The model can reconstruct visible faces, openings, leaf overlap and perspective, while preserving recognisable product design. Default: `gpt-image-2.5-flare`, native transparent PNG, longest output dimension 1280, model-compatible dimensions. A single photograph supports plausible novel views, not a metrically correct 3D model.
-6. **Install only the transparent product layer.** No generated storefront pixels are used. Some image outputs centre and enlarge the subject; the processor restores the intended footprint height, centre and ground level. It rejects opaque scenes, empty layers, excessive solid coverage, extreme scale changes and products outside the allowed region. Local contact occlusion is added beneath each newly rendered base. The layer is sampled to the original camera's resolution before compositing, preventing an excessively sharp studio cutout. The attribution strip and all pixels outside the installation layer stay unchanged relative to the resized original.
-7. **Review, compare and export.** A vision check scores identity, grounding and scene preservation, with specific checks for missing containers, substituted products, floating bases and blocked doors. Serious failures are withheld from the export action; uncertain results need manual approval. The UI includes original, placement, enhanced and before/after comparison views, saved versions and separate basic/enhanced downloads. Always inspect the result before sending it to a venue.
+## Selected venues and evidence
 
-## Why the previous enhancement was ineffective
+On 11 October 2026, automatic Soho run `d29298e6-e177-489e-b225-3c615e21b4f7` assessed four venues using ten images and selected three without supplied venue names or manual acceptance overrides:
 
-The old path allowed only small smooth colour changes on the original cutout. It could not change its silhouette, visible faces or perspective. An initial full-scene edit during this work did reconstruct the planters, but it also repainted window contents and a nearby person. The automated reviewer missed that defect. That trial is marked rejected in ROBATA's history.
-
-The replacement generates a transparent installation layer and composites it over the original. This gives the model freedom to reconstruct the product without asking it to recreate the building faithfully. Source preservation is enforced by pixel composition, independently of the model's opinion.
-
-## Cost and recovery
-
-- Medium is enforced in image requests. Extraction has its own model setting and approved products are reused.
-- Cached geometry and layout fingerprints avoid paying again for an unchanged successful output. A new paid variant requires the explicit regenerate action.
-- One image request per enhancement, no automatic paid retries. Basic, raw, final and attempt metadata are retained.
-- A saved raw result can be recovered after a processing failure without another image request. Recovery can incur a small vision-review charge.
-- The two successful ROBATA image calls were approximately $0.0363 and $0.0364 each. A rejected full-scene trial was approximately $0.0672. Total image testing spend was about $0.14, plus geometry/review calls. These are estimates from response usage and published rates, not a billing statement.
-- The app stores image-call usage and its estimated cost on each version. Google imagery is fetched during venue selection/source saving, not for every placement adjustment.
-
-Model references: [Flare model and pricing](https://developers.openai.com/api/docs/models/gpt-image-2.5-flare), [image generation guide](https://developers.openai.com/api/docs/guides/image-generation), [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1).
-
-## ROBATA validation and limits
-
-The saved demonstration uses the actual ROBATA Street View and the approved white planter pair. It includes an automatic-facing variant and a smaller version requesting a 20-degree turn. The latter is the latest output in the project. Position, size and angle were chosen in the placement workflow; this is not evidence of completely automatic scene layout. Local evidence is in `output/robata-example/`, including the transparent layer and a comparison against the previous composition.
-
-Pixel verification of the final example found **zero changed pixels outside the installation layer and zero changed attribution pixels**. Tests also cover anchor stability across turns/flips, separate bases, protected pixels, native transparent output alignment, opaque-output rejection, cache reuse, single image-call recovery, API failure handling and browser placement/export interactions.
-
-Remaining limits are material:
-
-- Absolute scale is estimated. A known product dimension and a calibrated scene reference would be needed for measured accuracy.
-- New viewpoints reconstruct unseen material and foliage; fine geometry and small product details can drift. Review against the source product remains necessary.
-- There is no full scene depth map or person segmentation. Placing behind a foreground person or railing can give wrong occlusion. Choose clear pavement; the review gate can reject conflicts but cannot guarantee detection.
-- Multi-arrangement renders depend on the image model preserving the layout. Global footprint alignment and region checks reject substantial drift, but do not prove each arrangement's exact position.
-- Source blur, clutter and Street View stitching limit the final quality. Upscaling does not recover real building detail.
-- The current job claim prevents duplicate workers within a server process. Storage state is not a distributed job queue; multi-instance durable jobs and authentication remain deployment work.
-- Automated discovery and bounded capture fallback are implemented below. The live submission run now has three real automatically selected venues and compositions; this small demonstration is not a measured accuracy evaluation.
-
-## Automatic frontage discovery and reusable shortlist (11 October)
-
-The approved-venue shortlist is separate from projects. The user confirms a discovery batch; the server finds and screens the venues, chooses camera views, judges each image, corrects or falls back, and saves passing venues without requiring manual image selection. The user may then choose which approved venue becomes a project. Manual search remains available but does not confer automatic approval.
-
-**Venue selection.** Resolve a London neighbourhood/postcode to a bounded rectangle (Soho uses the existing central-Soho pilot window). Mixed discovery combines one page each of cafes, restaurants and salons, deduplicates place IDs, ranks physical-address evidence and interleaves categories. Explicit categories also support bars and boutiques. Operational status, relevant type, area, physical street address and a transparent known-chain exclusion list screen candidates. Unit/complex addresses lower confidence rather than assuming all such venues lack a street entrance. This is evidence of likely independence, not ownership verification. Google rank/popularity and opening right now do not establish suitability. Previously approved/removed places are skipped; recently exhausted candidates are deprioritised. The pilot considers at most ten new candidates from this pool; it does not exhaustively paginate all of London.
-
-**Capture and framing.** Existing street-name geometry and seven outdoor panorama probes produce source-screened, distance/angle/date-ranked cameras. Google attribution is a heuristic, not proof of a car capture or present-day occupancy. The initial heading points at the venue pin, with a moderately wide field of view for context. A second camera preferably differs by at least five metres. Each exact frame records panorama ID, camera location, absolute heading, horizontal FOV, pitch, image dimensions and capture date. Unknown coverage does not justify an arbitrary camera substitution.
-
-**Automated accept/reject bar.** A dedicated `gpt-4.1-mini` vision call (configurable via `OPENAI_FRONTAGE_MODEL`) returns a strict structured response. Application code, not the model's suggested action alone, requires: confirmed visible venue identity; outdoor frontage; actual entrance visible; useful complete framing; visible ground for at least one planter without blocking the doorway; under-dressed frontage; adequate image quality. Wrong identity, interiors, missing/cropped entrances, severe obliqueness/occlusion, no placement ground or extensive existing planting fail. Unreadable/ambiguous identity remains uncertain, not accepted. Normal pedestrians need not fail a frame if installation space remains visible. Visual space is not proof of legal pavement use or accessible clearance.
-
-**Repair and fallback.** For a visibly identified correct entrance, normalized doorway coordinates drive bounded camera changes using a pinhole projection: horizontal correction = atan((2 * centreX - 1) * tan(FOV / 2)). Pitch aims slightly below the doorway centre to keep pavement; clipping widens the view. Corrections are bounded to 30 degrees of heading, FOV 45–90 degrees and pitch -20–15 degrees. The corrected image is assessed again. Wrong-store/obstructed/oblique views try a different camera instead. After at most two Street View images, up to two Google Places photos are tried with the same acceptance bar. Photo metadata does not identify exteriors, so this fallback can fail too. No website crawler is claimed. A venue with no usable view is skipped, not fabricated or silently accepted.
-
-**Persistence and cost.** Supabase stores `approved_venues`, `frontage_assessments` and `frontage_runs`; no raw candidate images are archived by discovery. An assessment key includes venue, panorama, geometry, capture date, model and rules version. Photo reviews key the actual image fingerprint; expiring photo resource names and media URLs are not stored. Successful and rejected checks are reused for up to 30 days. Preview uses the original framing, a free metadata availability check for Street View, and verifies the returned image fingerprint. Missing/replaced imagery marks the entry stale; a different panorama cannot inherit approval. Explicit reassessment invalidates the previous approval until a new view passes. Decisions retain reasons, issues, usage, dates and attempt history for inspection.
-
-A batch targets three new approvals, with hard limits of ten venues and twenty image requests/reviews across all retries and fallbacks. Fewer than three is an honest outcome when coverage or budget is exhausted. The UI confirms charges, reports attempted image/vision requests and reused decisions, and can run another batch. One partial unique database index permits only one active run in the shared workspace. Short database leases protect each step across tabs/server instances. Chargeable operations are checkpointed before requests; an interrupted pending operation stops rather than replaying an uncertain charge. Refresh/navigation pauses browser-driven execution; explicit Resume continues the existing run and budget. API outages are errors, not negative venue judgements. Hosted discovery is opt-in with `ENABLE_HOSTED_DISCOVERY=true`; this is a shared prototype, not authenticated multi-tenant spend control.
-
-**Rights position.** A photograph of a public-facing property is not automatically available for commercial reuse. The photographer/provider's licence, Google terms, attribution and any relevant privacy/property concerns are separate from technical capture and from a venue owner's consent. Google's [Street View policies](https://developers.google.com/maps/documentation/streetview/policies) generally restrict caching, with exceptions such as panorama IDs; the [Maps terms](https://cloud.google.com/maps-platform/terms) also restrict reuse and derivative content. Re-fetching an image and retaining attribution do not by themselves authorize compositing. The app asks for a rights assertion before persisting an automatically selected image into a project; that checkbox does not grant rights or establish legal compliance. Production requires appropriately licensed/commissioned/venue-supplied images with documented reuse permission, source-specific retention controls (including Places metadata), privacy review and any required provider agreement. The existing saved-image workflow is a prototype capability, not a claim of blanket Google permission. This short take-home has no production retention scheduler or legal clearance workflow.
-
-**Verification.** Unit and browser tests use mocked providers and cover the acceptance bar, uncertainty, correction/recheck, alternative camera, photo fallback, fingerprint reuse, interruption, budgets, confirmation and project hand-off. A separate, explicitly confirmed live run produced the evidence below. At 5,000+ venues/week the next step would be a queued worker, explicit account budgets, measured visual accuracy and licensed imagery procurement—not unbounded retries in a serverless request.
-
-## Live submission examples and decision evidence
-
-Open **Library → Submission examples** (`/examples`) in the running app. This page reads the shared Supabase projects and compositions, not hardcoded demo images. It shows reviewed compositions for automatically selected venues, original frontage photographs, addresses/postcodes, selection reasons, image source/attribution, and links to the original supplied product and exact extracted revision. Viewing examples does not call Google or an AI model. New code still needs deploying for this page to appear on Vercel; the underlying examples are already in shared storage.
-
-On 11 October 2026, live run `d29298e6-e177-489e-b225-3c615e21b4f7` searched **Soho / mixed businesses**. From 40 screened listings, it considered a bounded queue of ten, assessed four venues, requested/reviewed **10 images** (6 Street View, 4 Places photos), and stopped with **three approvals**. No venue names were supplied to the search or manually forced through the acceptance gate. Saved rows in `frontage_runs`, `frontage_assessments` and `approved_venues` retain the full decisions and model usage. The read-only run endpoint is `/api/frontage-discovery/d29298e6-e177-489e-b225-3c615e21b4f7`.
-
-| Automatically selected venue | Address and postcode | Image and selection evidence | Actual supplied product |
+| Venue | Address and postcode | Acceptance evidence / source | Supplied product |
 | --- | --- | --- | --- |
-| DUCKSOUP | 41 Dean St, London W1D 4PY | Readable matching sign, visible frontage/entrance and bare installation area; pedestrians and neighbouring sign retained as caveats. Street View, October 2022. | `planter_image1.jpg`: rust-coloured rectangular pair with palm; extracted revision `53775691-5ce6-4207-93aa-1754f38d6601`. |
-| Salon64 | 14 Bateman St, Greater, London W1D 3AG | Matching SALON64 signage, clear doorway and bare pavement; passing pedestrian blur tolerated. Second Places photo, credited to Salon64; capture date unknown. | `planter_image2.jpg`: white planter pair; extracted revision `db8c7a73-8fd0-4a06-b5e5-27cae00b4587`. |
-| KOZZEE Cafe Soho | 193 Wardour St, London W1F 8ZF | Matching KOZZEE sign and coffee/brunch text, visible left-hand entrance and clear ground beside the window; cars and pedestrian remain. Street View, October 2025. | `planter_image3.jpg`: large black cylindrical planter; extracted revision `b92cabfd-bfe1-4c20-8d5c-9fd246410e28`. |
+| DUCKSOUP | 41 Dean St, London W1D 4PY | Matching sign, visible entrance and bare ground. Street View, October 2022. | `planter_image1.jpg`: rust-coloured rectangular pair. |
+| Salon64 | 14 Bateman St, London W1D 3AG | Matching sign, clear doorway and bare pavement. Places photo credited to Salon64; date unknown. | Originally `planter_image2.jpg`: white pair; the current saved example uses the supplied long cream planter (`planter_image5.jpg`). |
+| KOZZEE Cafe Soho | 193 Wardour St, London W1F 8ZF | Matching sign, visible entrance and unplanted ground. Street View, October 2025. | `planter_image3.jpg`: black cylinder. |
 
-Exact accepted Street View frames: DUCKSOUP panorama `pcIIHyqGKQCpH5_zBTcUXQ`, heading **34°**, FOV **65°**, pitch **−5°**, 640×480; KOZZEE panorama `xBADgbKwIxQ80jQe0r1z_g`, heading **241°**, FOV **65°**, pitch **−5°**, 640×480. Salon64 used photo index 1, requested at up to 640×480 (returned 640×427), with stored image fingerprint. Source files, compositions and product revisions are retained in Supabase; local inspection copies are under ignored `output/submission-examples/`.
+**Rejections and fallback:** Sacred Grounds was skipped after a church view, an unconfirmed frontage and two interior photos. Salon64 passed only after two wrong-business Street Views and a branding-only photo were rejected. An earlier Toi & Moi attempt failed for substantial existing planting. Successful geometric reframing has automated test coverage but was not demonstrated by this run.
 
-**Real rejection and fallback:**
+Decisions remain at `/api/frontage-discovery/d29298e6-e177-489e-b225-3c615e21b4f7`. The three venues were rendered; Salon64 received a second layout moving the pair away from the doorway after manual inspection. `/examples` displays saved, approved compositions with originals and product references; deleting a project removes its example.
 
-- Sacred Grounds: first Street View showed St. Anne's Church, so **wrong venue** (`975ea01662f62425d11f627942dd8f5b0943d9565b0c7768d8242af945d998a8`). A second camera lacked confirming signage and remained **uncertain**. Both fallback photos were interiors/coffee imagery, not entrances. The venue was skipped, not accepted because it appeared nearby.
-- Salon64: two Street View cameras showed other businesses and were rejected. The first Places photo showed only the salon's branding, with no entrance or ground. The second photo showed the actual frontage and passed (`2a56f2eb4322d2704411ca05a800ad8b639efc45fba277c02b1d0a25b8df358d`). This is a successful live alternative-camera and photo-fallback example. Geometric reframing has automated test coverage, but this run did not demonstrate a successful geometric reframe.
-- Earlier Toi & Moi run `b2487292-741d-417a-8bd0-1c643dfe948f` remains unchanged. Its fallback showed substantial floral planting and was rejected. Some earlier Street View prose conflicted with the binary planting decision; this motivated clearer classification, not retroactive approval.
+## Product extraction and compositing
 
-**Acceptance revision:** `frontage-v2` distinguishes **bare / light / substantial** planting. A few pots or window boxes are acceptable when there is useful installation space; a richly dressed entrance is still rejected. Moderate perspective, neighbouring frontage, shadows and people away from the placement area become caveats, not automatic failures. Wrong identity, uncertain identity, interiors, missing entrances and unusable placement ground still cannot pass. Deterministic failure labels are added to the model's reason, and image usability is recorded separately from venue suitability. Changing the rules version invalidates old cache reuse.
+1. **Extract and approve.** `gpt-image-1.5` at Medium isolates containers and their plants together into a transparent PNG. Extraction preserves visible detail; optional reconstruction infers obscured portions. The operator approves a revision. Original photographs, cutouts and base-contact coordinates are retained.
+2. **Estimate scale.** `gpt-4.1` identifies a complete doorway, person or chair with an assumed typical height, such as a 2.1 m doorway. Container height is estimated separately from foliage:
 
-**Composition and limits:** venue selection and the accepted-photo choice were automatic. Product choice and placement were subsequently adjusted by an operator; this is not an end-to-end autonomous installation designer. The existing application calibrated each scene, rendered the real supplied cutouts with `gpt-image-2` at Medium, and ran its normal visual review. Initial renders passed that review. Manual inspection identified that Salon64's first pair was too close to the door; a second layout moved it left. Both versions remain in history: this is evidence of a review limitation rather than proof that model scores guarantee accessibility. Scale assumptions, reconstructed foliage, old imagery, unseen doorway operation and possible scene/detail drift still require review. Current operational listings do not prove that an older photograph depicts today's appearance, and visual pavement space does not establish permission to install.
+   ```text
+   arrangement image height = reference image height
+     × assumed container metres ÷ reference metres
+     ÷ container fraction of the product image
+   ```
 
-The four image-generation estimates recorded by the app were **$0.0692 / $0.0631 / $0.0724 / $0.0631** (**$0.2678 total**, including the corrective Salon64 render), excluding discovery, calibration/review and Google requests. These are the app's token-based estimates, not a billing invoice or an assertion about remaining Google credit. Saving the selected originals required three further image retrievals but no repeated vision assessments. Reopening the completed examples incurs storage traffic only. Final version IDs: DUCKSOUP `3307015c-6464-4fdb-a373-6b175859599a`; Salon64 `83a96cb8-1db0-4e5a-aec2-c243da53417f`; KOZZEE `5bdfde32-6d6f-4441-b1d2-1b84569ac55b`. All three passed the app's automated review; manual inspection preferred the corrected Salon64 placement, which leaves the entrance clear.
+   Approximate horizon geometry adjusts size with ground depth. Missing references yield a labelled low-confidence fallback. Neither product dimensions nor scene dimensions are measured from a single uncalibrated photograph.
+3. **Place.** The saved frontage opens in Studio. Dragging, size, facing, flip and duplication control an affine preview with contact shadows. Basic export uses the same geometry. There is no reconstructed 3D model.
+4. **Integrate.** One `gpt-image-2` Medium edit receives the placement guide, untouched storefront and exact extracted products. Constraints specify container count, shape, material, colour, foliage, position and angle. The model resolves perspective, lighting, reflections and grounding. Its complete output is used to avoid seams from blending incompatible backgrounds.
+5. **Review.** A separate vision call compares the result with the original scene and product references. Before/after comparison and version history support inspection.
 
-The project owner explicitly asserted the necessary image-reuse rights before originals were persisted and edited. That assertion is recorded in project notes; it is not independently verified and does not supersede provider terms. Attribution and sources remain visible.
+Product references constrain generation but cannot guarantee unseen geometry or fine detail. Full-image generation can alter surrounding details despite preservation instructions; the assignment's requirement that everything else remain unaltered is therefore not guaranteed.
+
+## Rejection criteria
+
+Do not send proposals containing substituted products, missing/extra containers, major scale errors, floating bases, visible background patches, blocked access, changed signage, moved people or material building alterations.
+
+Automated review scores identity, grounding and scene preservation from 1–5. Serious failures or scores ≤2 reject; all scores ≥4 pass; other results require review. Unavailable review also requires inspection. Export requires a pass or explicit manual approval, with overrides recorded. The Salon64 correction demonstrates that model approval cannot replace final inspection before outreach.
+
+## Imagery rights
+
+Image acceptance and reuse permission are separate. API access, public visibility and venue consent are not treated as blanket permission to edit a provider's photograph.
+
+The project owner asserted permission for prototype imagery; the app records that assertion, sources and attribution without independently verifying it. Commercial deployment requires documented rights covering storage, editing and distribution, provider-term compliance, and retention/privacy controls. Otherwise, use licensed, commissioned or venue-supplied photographs. Attribution alone is insufficient evidence of permission.
+
+## Cost controls and scale
+
+Discovery targets three approvals with limits of ten candidates and twenty image/review attempts. Decisions are cached for up to 30 days against source geometry/fingerprints, model and rules version. Changed imagery cannot inherit approval.
+
+Product assets and scale analyses are reused. Placement adjustments incur no image-generation calls. Completed unchanged layouts reuse results; enhancement makes one image request with no automatic paid retry. Saved raw output supports recovery without regeneration.
+
+Local and deployed AI now share a UTC-day allowance of 20 extractions, 40 compositions and 200 vision assessments. Before dispatch, a create-only receipt in the private Supabase bucket reserves a slot; unique object keys enforce the cap across server instances. Failed requests retain their slot, storage errors fail closed, and cached results do not reserve a slot. No database migration is needed. `ENABLE_PAID_AI=false` is an emergency stop; the previous hosted-only flags are no longer used. Google usage is separate: selecting a search result now automatically loads up to five views, while discovery retains its bounded retry budget.
+
+The four submission image calls, including Salon64's correction, recorded estimates of $0.063–$0.072 each, approximately $0.268 total. Google, discovery, calibration and review costs are additional; these are app estimates, not invoices.
+
+At 5,000+ venues per week, browser-driven batches would move to queued workers with durable jobs, account budgets, retention controls and measured acceptance accuracy. Selection and framing would remain automatic; product fidelity and output review remain quality limits.

@@ -140,7 +140,7 @@ describe("planter extraction and durable review", () => {
   it("requires a configured key before creating a job", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const asset = await createAsset(source, "photo.png", "Test");
-    await expect(queueExtraction(asset.id, settings)).rejects.toThrow("Set OPENAI_API_KEY");
+    await expect(queueExtraction(asset.id, settings)).rejects.toThrow("Configure OPENAI_API_KEY");
     expect((await readAsset(asset.id)).status).toBe("uploaded");
   });
 });

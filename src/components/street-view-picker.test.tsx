@@ -19,32 +19,40 @@ describe("Street View image request controls", () => {
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-  it("loads metadata only until the user confirms image requests", async () => {
+  it("automatically loads views once even under development StrictMode", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<StreetViewPicker venue={venue} onSelection={vi.fn()} />);
-    const button = await screen.findByRole("button", { name: "Load 5 views" });
-    expect(fetch).toHaveBeenCalledTimes(1);
-    fireEvent.click(button);
-    expect(window.confirm).toHaveBeenCalledOnce();
-    expect(fetch).toHaveBeenCalledTimes(1);
+    render(<React.StrictMode><StreetViewPicker venue={venue} onSelection={vi.fn()} /></React.StrictMode>);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Load 5 views" })).not.toBeInTheDocument();
   });
 
-  it("loads the five exact selected camera references after one confirmation", async () => {
+  it("loads exact camera references and framing changes automatically, reusing cached frames", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const selected = vi.fn();
     render(<StreetViewPicker venue={venue} onSelection={selected} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Load 5 views" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
     await waitFor(() => expect(selected).toHaveBeenCalledWith(expect.objectContaining({ candidate: cameras[0], offset: 0, fov: 65, imageUrl: "blob:test-image" })));
-    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(window.confirm).not.toHaveBeenCalled();
     const calls = vi.mocked(fetch).mock.calls.slice(1);
     expect(calls.map(([, options]) => JSON.parse(options!.body as string).candidateToken)).toEqual(cameras.map((camera) => camera.token));
     expect(screen.queryByRole("button", { name: "Load 5 views" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load selected view only" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Framing"), { target: { value: "45" } });
-    fireEvent.click(await screen.findByRole("button", { name: "Load 1 view" }));
     await waitFor(() => expect(selected).toHaveBeenCalledWith(expect.objectContaining({ candidate: cameras[0], offset: 0, fov: 45, imageUrl: "blob:test-image" })));
     expect(fetch).toHaveBeenCalledTimes(7);
     expect(JSON.parse(vi.mocked(fetch).mock.calls[6][1]!.body as string)).toMatchObject({ candidateToken: cameras[0].token, fov: 45 });
+    fireEvent.change(screen.getByLabelText("Framing"), { target: { value: "0" } });
+    await waitFor(() => expect(selected).toHaveBeenLastCalledWith(expect.objectContaining({ fov: 65 })));
+    expect(fetch).toHaveBeenCalledTimes(7);
+  });
+
+  it("does not loop on failed downloads and permits explicit retry", async () => {
+    vi.mocked(fetch).mockImplementation(async url => String(url).endsWith("/metadata") ? Response.json({ candidates: [cameras[0]] }) : Response.json({ error: "Provider unavailable" }, { status: 502 }));
+    render(<StreetViewPicker venue={venue} onSelection={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Provider unavailable");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Retry unavailable views" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
   });
 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { paidAiEnabled, DAILY_LIMITS } from "@/lib/usage-budget";
 import { createAsset, listAssets } from "@/lib/planters/store";
 import { imageModel } from "@/lib/planters/extraction";
 import { MAX_UPLOAD_BYTES } from "@/lib/planters/images";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   if (process.env.VERCEL === "1" && !storageConfigured()) return NextResponse.json({ error: "Configure Supabase storage on this deployment." }, { status: 503 });
-  try { return NextResponse.json({ assets: await listAssets(), configured: Boolean(process.env.OPENAI_API_KEY) && (process.env.VERCEL !== "1" || process.env.ENABLE_HOSTED_EXTRACTION === "true"), uploadsAvailable: true, storage: storageConfigured() ? "supabase" : "local", model: imageModel(), outputDirectory: storageConfigured() ? storageBucket() : "output/planters", ...(process.env.VERCEL === "1" && process.env.ENABLE_HOSTED_EXTRACTION !== "true" ? { message: "Paid extraction is disabled here; saved assets and manual review remain available." } : {}) }, { headers: { "Cache-Control": "no-store" } }); }
+  try { return NextResponse.json({ assets: await listAssets(), configured: paidAiEnabled(), dailyLimits: DAILY_LIMITS, uploadsAvailable: true, storage: storageConfigured() ? "supabase" : "local", model: imageModel(), outputDirectory: storageConfigured() ? storageBucket() : "output/planters", ...(!paidAiEnabled() ? { message: "Configure OPENAI_API_KEY and ensure ENABLE_PAID_AI is not false to enable AI processing." } : {}) }, { headers: { "Cache-Control": "no-store" } }); }
   catch (error) { return planterFailure(error); }
 }
 

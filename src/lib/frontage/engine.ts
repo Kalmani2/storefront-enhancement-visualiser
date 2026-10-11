@@ -3,6 +3,7 @@ import { categoryProfiles, isKnownChain, type GoogleCategory } from "../google/p
 import { PlanterError } from "../planters/validation";
 import { assessFrontage, assessmentKey, correctedFrame, decisionReason, fingerprint, frontageModel, imageUsable, venueSuitable, verdict } from "./assessment";
 import { candidateFrames, fetchFrontageImage, frameAvailable } from "./images";
+import { saveApprovedPreview } from "./preview";
 import * as store from "./store";
 import { RULES_VERSION, RUN_LIMITS, type ApprovedVenue, type AssessmentRecord, type DiscoveryRun, type FrontageFrame } from "./types";
 
@@ -12,6 +13,7 @@ export const dependencies = {
   assess: assessFrontage, getAssessment: store.getAssessment, saveAssessment: store.saveAssessment,
   getApproved: store.getApproved, saveApproved: store.saveApproved, listApproved: store.listApproved,
   recentExhausted: store.recentExhausted,
+  savePreview: saveApprovedPreview,
 };
 
 export function freshRun(id: string, location: string, category: string, placeId?: string, force = false): DiscoveryRun {
@@ -101,6 +103,7 @@ export async function stepRun(run: DiscoveryRun, save: store.SaveRun, dep = depe
     if (frame.source === "streetview" && !run.force) cached = await dep.getAssessment(assessmentKey(venue.placeId, frame));
     if (cached && frame.source === "streetview" && !await dep.available(frame)) cached = undefined;
     let record: AssessmentRecord;
+    let assessedImage: Awaited<ReturnType<typeof fetchFrontageImage>> | undefined;
     if (cached) { record = cached; run.reused++; }
     else {
       // Reserve image capacity before retrieval; errors still count as attempted requests.
@@ -120,6 +123,7 @@ export async function stepRun(run: DiscoveryRun, save: store.SaveRun, dep = depe
         throw error;
       }
       frame = image.frame;
+      assessedImage = image;
       const imageHash = fingerprint(image.bytes), id = assessmentKey(venue.placeId, frame, imageHash);
       cached = !run.force ? await dep.getAssessment(id) : undefined;
       if (cached?.fingerprint === imageHash) { record = cached; run.reused++; }
@@ -134,6 +138,7 @@ export async function stepRun(run: DiscoveryRun, save: store.SaveRun, dep = depe
     delete run.pending;
     run.attempts.push({ venueId: venue.placeId, venueName: venue.name, source: frame.source, outcome: record.verdict, reason: decisionReason(record.assessment), imageUsable: imageUsable(record.assessment), venueSuitable: venueSuitable(record.assessment), issues: record.assessment.issues, reused: Boolean(cached && record === cached), assessmentId: record.id });
     if (record.verdict === "approved") {
+      if (assessedImage) await dep.savePreview(record.id, assessedImage.bytes, assessedImage.contentType);
       await dep.saveApproved({ venue, area: run.location, bounds: run.bounds, status: "approved", review: record, savedAt: new Date().toISOString() });
       run.approvedIds.push(venue.placeId); delete run.current;
       run.message = `${venue.name} approved and saved to the shortlist.`;

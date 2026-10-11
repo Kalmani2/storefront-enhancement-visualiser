@@ -1,9 +1,9 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import Link from "next/link";
-import { ArrowRight, Camera, CheckCircle2, LoaderCircle, MapPin, Pause, Play, Search, Trash2 } from "lucide-react";
+import { ArrowRight, Camera, CheckCircle2, ChevronDown, LoaderCircle, MapPin, Pause, Play, Search, Trash2 } from "lucide-react";
 import { RULES_VERSION, RUN_LIMITS, type ApprovedVenue, type DiscoveryRun } from "@/lib/frontage/types";
 import type { GoogleVenue } from "@/lib/google/types";
 
@@ -18,7 +18,21 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-export function FrontageDiscovery({ requestedVenue, onRequestHandled }: { requestedVenue?: GoogleVenue; onRequestHandled?: () => void }) {
+// Share only in-flight reads, including React's development remount. Each card
+// owns its blob URL; settled requests do not accumulate in browser memory.
+const pendingPreviews = new Map<string, Promise<Response>>();
+function previewResponse(placeId: string, assessmentId: string) {
+  const key = `${placeId}:${assessmentId}`;
+  let pending = pendingPreviews.get(key);
+  if (!pending) {
+    pending = fetch(`/api/approved-venues/${placeId}`, { cache: "no-store" }).finally(() => pendingPreviews.delete(key));
+    pendingPreviews.set(key, pending);
+  }
+  return pending.then(response => response.clone());
+}
+
+export type FrontageDiscoveryHandle = { check: (venue: GoogleVenue) => void };
+export function FrontageDiscovery({ ref }: { ref?: Ref<FrontageDiscoveryHandle> }) {
   const [venues, setVenues] = useState<ApprovedVenue[]>([]);
   const [run, setRun] = useState<DiscoveryRun>();
   const [area, setArea] = useState("Soho"), [category, setCategory] = useState("all");
@@ -70,6 +84,7 @@ export function FrontageDiscovery({ requestedVenue, onRequestHandled }: { reques
     try { await drive(run); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not resume."); }
     finally { processing.current = false; if (mounted.current) setBusy(false); }
   }
+  useImperativeHandle(ref, () => ({ check: venue => { void start(venue); } }));
   async function cancel() {
     if (!run || busy || !window.confirm("Cancel this discovery run? Completed approvals will be kept.")) return;
     try { setRun(await request<DiscoveryRun>(`/api/frontage-discovery/${run.id}`, { method: "DELETE" })); setError(""); }
@@ -83,22 +98,21 @@ export function FrontageDiscovery({ requestedVenue, onRequestHandled }: { reques
       <span className="border border-[#c9d4c0] bg-[#e7eddf] px-3 py-2 text-xs text-[#56704c]">Automatic selection · Saved decisions</span>
     </div>
     {error && <div role="alert" className="mb-5 border border-[#d7b9a3] bg-[#fff6eb] p-4 text-sm text-[#824b32]">{error}<button onClick={() => { setError(""); void refresh().catch(cause => setError(cause.message)); }} className="ml-3 underline">Retry loading saved data</button></div>}
-    {requestedVenue && <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border border-[#bac9b9] bg-[#e5eddf] p-4"><p className="text-sm">Check <strong>{requestedVenue.name}</strong> automatically, including retries and fallback photos.</p><div className="flex gap-2"><button disabled={busy || run?.status === "running"} className={primary} onClick={() => { void start(requestedVenue); onRequestHandled?.(); }}>Find best frontage</button><button className={button} onClick={onRequestHandled}>Dismiss</button></div></div>}
     <form id="discover-form" onSubmit={event => { event.preventDefault(); void start(); }} className="mb-6 grid gap-5 border border-[#d2d9cb] bg-[#faf9f2] p-6 md:grid-cols-[1fr_1fr_auto] md:items-end">
       <label className="text-xs font-semibold text-[#526a57]">London area<input id="discover-area" required minLength={2} maxLength={80} value={area} disabled={busy} onChange={event => setArea(event.target.value)} className="mt-2 block w-full border border-[#bbc8b7] bg-white px-3 py-3 text-sm" /></label>
       <label className="text-xs font-semibold text-[#526a57]">Business mix<select value={category} disabled={busy} onChange={event => setCategory(event.target.value)} className="mt-2 block w-full border border-[#bbc8b7] bg-white px-3 py-3 text-sm"><option value="all">Cafes, restaurants & salons</option><option value="cafe">Cafes</option><option value="restaurant">Restaurants</option><option value="hair salon">Hair salons</option><option value="bar">Bars & pubs</option><option value="shop">Clothing boutiques</option></select></label>
       <button disabled={loading || busy || run?.status === "running"} className={primary}>{busy ? <LoaderCircle size={16} className="animate-spin" /> : <Search size={16} />}Discover 3 venues</button>
       <p className="text-xs leading-5 text-[#738171] md:col-span-3">Up to 10 businesses and 20 image assessments per batch. Stops after 3 approvals. Existing decisions are reused; every new batch asks for confirmation. Search is limited to a neighbourhood-sized window.</p>
     </form>
-    {run && <div aria-live="polite" className="mb-7 border-l-4 border-[#527652] bg-[#e8ecdf] p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold">{busy ? "Discovery in progress" : run.status === "running" ? "Discovery paused — ready to resume" : run.status === "error" ? "Discovery stopped safely" : "Discovery summary"}</p><p className="mt-2 text-sm text-[#52624d]">{run.message.replace("Choose Find more to continue.", "Start another discovery batch to find more.")}</p><p className="mt-3 text-xs text-[#61715a]">{run.cursor} businesses considered · {run.images} image requests · {run.reviews} vision requests · {run.reused} checks reused · {run.approvedIds.length} approved</p></div>
+    {run && <details open={run.status === "running" || run.status === "error"} className="mb-5 text-xs text-[#62705d]"><summary className="w-fit cursor-pointer py-1 text-xs font-semibold text-[#738171]">{run.status === "running" ? busy ? "Discovery in progress" : "Discovery paused \u2014 ready to resume" : run.status === "error" ? "Discovery stopped safely" : "Discovery summary"}</summary><div aria-live="polite" className="mt-3 border-l border-[#c8d2c0] pl-4">
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="mt-2 text-sm text-[#52624d]">{run.message.replace("Choose Find more to continue.", "Start another discovery batch to find more.")}</p><p className="mt-3 text-xs text-[#61715a]">{run.cursor} businesses considered · {run.images} image requests · {run.reviews} vision requests · {run.reused} checks reused · {run.approvedIds.length} approved</p></div>
         {run.status === "running" && <div className="flex gap-2">{busy ? <button className={button} onClick={() => { continuing.current = false; }}><Pause size={14} />Pause after this step</button> : <><button className={button} onClick={resume}><Play size={14} />Resume</button><button className={button} onClick={cancel}>Cancel run</button></>}</div>}
       </div>
       {run.attempts.length > 0 && <details className="mt-4 text-xs"><summary className="cursor-pointer font-semibold">View decisions and rejected attempts ({run.attempts.length})</summary><ul className="mt-3 max-h-64 space-y-3 overflow-auto">{run.attempts.map((attempt, index) => <li key={index}><span className="font-semibold">{attempt.venueName} · {attempt.outcome}{attempt.reused ? " · reused" : ""}</span><p className="mt-1 text-[#62705d]">{attempt.reason}</p></li>)}</ul></details>}
-    </div>}
+    </div></details>}
     <div id="approved-venues" className="mt-9 border-t border-[#d2d9cb] pt-6">
       <div className="mb-3 flex items-center gap-3"><h3 className="font-serif text-2xl">Approved venues</h3><span className="rounded-full bg-[#e0e8d8] px-2.5 py-1 text-xs font-semibold text-[#506b46]">{venues.length}</span></div>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><p className="text-xs text-[#738171]">Saved decisions, not projects. Browsing this list makes no image or vision requests.</p><label className="flex items-center gap-2 border-b border-[#b8c5b4] px-2"><Search size={15} /><input aria-label="Filter approved venues" value={filter} onChange={event => setFilter(event.target.value)} placeholder="Name, area or postcode" className="bg-transparent py-2 text-sm outline-none" /></label></div>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><label className="flex items-center gap-2 border-b border-[#b8c5b4] px-2"><Search size={15} /><input aria-label="Filter approved venues" value={filter} onChange={event => setFilter(event.target.value)} placeholder="Name, area or postcode" className="bg-transparent py-2 text-sm outline-none" /></label></div>
       {loading ? <p role="status" className="py-8 text-center text-sm">Loading approved venues…</p> : shown.length ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{shown.map(venue => <ApprovedCard key={`${venue.venue.placeId}:${venue.review.checkedAt}`} item={venue} disabled={busy || run?.status === "running"} onReassess={() => void start(venue.venue, true)} onRemoved={() => setVenues(old => old.filter(v => v.venue.placeId !== venue.venue.placeId))} />)}</div> : <div className="flex items-center gap-4 border border-dashed border-[#b8c6b2] bg-[#f7f7ef] p-6"><MapPin size={25} className="shrink-0 text-[#698264]" /><div><h4 className="font-serif text-xl">{filter ? "No matching approved venues" : "Your shortlist starts here"}</h4><p className="mt-1 text-sm leading-6 text-[#697267]">{filter ? "Try another name or area." : "Use Discover above. Suitable entrances will be saved here without filling your project library."}</p></div></div>}
     </div>
   </section>;
@@ -106,30 +120,34 @@ export function FrontageDiscovery({ requestedVenue, onRequestHandled }: { reques
 
 function ApprovedCard({ item, disabled, onReassess, onRemoved }: { item: ApprovedVenue; disabled: boolean; onReassess: () => void; onRemoved: () => void }) {
   const [image, setImage] = useState<string>(), [blob, setBlob] = useState<Blob>();
-  const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const [rights, setRights] = useState(false), [title, setTitle] = useState(item.venue.name), [project, setProject] = useState<string>();
+  const [busy, setBusy] = useState(() => item.status === "approved" && item.review.rulesVersion === RULES_VERSION && Date.parse(item.review.expiresAt) > Date.now()), [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [adding, setAdding] = useState(false), [title, setTitle] = useState(item.venue.name), [project, setProject] = useState<string>();
   const [invalid, setInvalid] = useState(false);
+  const projectFormId = useId();
   const [openedAt] = useState(() => Date.now());
-  const preview = useRef<string | undefined>(undefined);
-  useEffect(() => () => { if (preview.current) URL.revokeObjectURL(preview.current); }, []);
+
+
   const stale = invalid || item.status !== "approved" || item.review.rulesVersion !== RULES_VERSION || Date.parse(item.review.expiresAt) <= openedAt;
-  async function load() {
-    if (busy || !window.confirm("Retrieve this exact approved image? This uses Google image requests, but no new vision assessment.")) return;
-    setBusy(true); setError("");
-    try {
-      const response = await fetch(`/api/approved-venues/${item.venue.placeId}`, json({ confirmed: true }));
-      if (!response.ok) { if (response.status === 409) setInvalid(true); throw new Error((await response.json()).error); }
-      const loaded = await response.blob(); setBlob(loaded);
-      if (preview.current) URL.revokeObjectURL(preview.current);
-      preview.current = URL.createObjectURL(loaded); setImage(preview.current);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load the approved image."); }
-    finally { setBusy(false); }
-  }
+  useEffect(() => {
+    if (stale) return;
+    const controller = new AbortController();
+    let url: string | undefined;
+    void previewResponse(item.venue.placeId, item.review.id).then(async response => {
+      if (controller.signal.aborted) return;
+      if (!response.ok) { if (response.status === 409) { setBusy(false); setInvalid(true); } throw new Error((await response.json()).error); }
+      const loaded = await response.blob();
+      if (controller.signal.aborted) return;
+      url = URL.createObjectURL(loaded); setBlob(loaded); setImage(url);
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not load the approved image."); })
+      .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
+  }, [item.venue.placeId, item.review.id, stale, retry]);
   async function save() {
-    if (!blob || busy || !rights) return;
+    if (!blob || busy || !title.trim()) return;
     setBusy(true); setError("");
     try {
-      const body = new FormData(); body.set("image", blob, "frontage.jpg"); body.set("assessmentId", item.review.id); body.set("title", title); body.set("rightsConfirmed", "true");
+      const body = new FormData(); body.set("image", blob, "frontage.jpg"); body.set("assessmentId", item.review.id); body.set("title", title);
       const saved = await request<{ id: string }>(`/api/approved-venues/${item.venue.placeId}`, { method: "POST", body }); setProject(saved.id);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not create the project."); }
     finally { setBusy(false); }
@@ -143,7 +161,7 @@ function ApprovedCard({ item, disabled, onReassess, onRemoved }: { item: Approve
   }
   return <article className="flex flex-col border border-[#d1d8c9] bg-[#faf9f2]">
     <div className="relative flex min-h-40 items-center justify-center border-b border-[#d1d8c9] bg-[#e3e9dc]">
-      {image ? <img src={image} alt={`Assessed entrance of ${item.venue.name}`} className="aspect-[4/3] w-full object-contain" /> : <button className={button} disabled={busy || stale} onClick={load}>{busy ? <LoaderCircle size={16} className="animate-spin" /> : <Camera size={16} />}Load approved view</button>}
+      {image ? <div className="relative aspect-[4/2.865] w-full overflow-hidden"><img src={image} alt={`Assessed entrance of ${item.venue.name}`} className="absolute inset-x-0 top-0 w-full" /></div> : busy ? <span role="status" className="flex items-center gap-2 text-xs text-[#62705d]"><LoaderCircle size={16} className="animate-spin" />Loading approved view...</span> : stale ? <Camera size={24} className="text-[#81917d]" /> : <button className={button} onClick={() => { setBusy(true); setError(""); setRetry(value => value + 1); }}>Retry preview</button>}
     </div>
     <div className="flex flex-1 flex-col p-5">
       <p className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider ${stale ? "text-[#946334]" : "text-[#527343]"}`}><CheckCircle2 size={13} />{stale ? "Needs reassessment" : "Automatically approved"}</p>
@@ -153,7 +171,10 @@ function ApprovedCard({ item, disabled, onReassess, onRemoved }: { item: Approve
       <p className="mt-3 text-[11px] text-[#7b8575]">Checked {new Date(item.review.checkedAt).toLocaleDateString("en-GB")} · {item.review.frame.source === "streetview" ? "Street View" : "Venue photo"}</p>
       <a href={item.venue.mapsUrl} target="_blank" rel="noreferrer" className="mt-2 text-xs underline">View on Google Maps</a>
       {item.review.frame.source === "places-photo" && <div className="mt-2 text-xs text-[#697267]">Photo: {item.review.frame.attribution.map((a, i) => a.uri ? <a className="mr-2 underline" key={i} href={a.uri} target="_blank" rel="noreferrer">{a.name}</a> : <span className="mr-2" key={i}>{a.name}</span>)}</div>}
-      {image && !stale && !project && <div className="mt-5 space-y-3 border-t border-[#d7ddce] pt-4"><label className="block text-xs font-semibold">Project name<input maxLength={160} value={title} onChange={event => setTitle(event.target.value)} className="mt-2 w-full border border-[#bdcbbb] bg-white p-2 text-sm" /></label><label className="flex gap-2 text-xs leading-5 text-[#6b7565]"><input type="checkbox" checked={rights} onChange={event => setRights(event.target.checked)} className="mt-1" />I have the necessary rights to store and use this photo for compositing. Visual approval is not a licence.</label><button className={`${primary} w-full`} disabled={busy || !rights || !title.trim()} onClick={save}>Create project <ArrowRight size={14} /></button></div>}
+      {image && !stale && !project && <div className="mt-auto pt-5">
+        <button type="button" aria-expanded={adding} aria-controls={projectFormId} disabled={busy} onClick={() => setAdding(value => !value)} className={`${button} w-full justify-between text-[#315e44]`}>Add project to library<ChevronDown size={16} className={`transition-transform ${adding ? "rotate-180" : ""}`} /></button>
+        {adding && <form id={projectFormId} onSubmit={event => { event.preventDefault(); void save(); }} className="space-y-3 border border-t-0 border-[#bac9b9] bg-[#f1f3e9] p-4"><label className="block text-xs font-semibold">Project name<input required maxLength={160} disabled={busy} value={title} onChange={event => setTitle(event.target.value)} className="mt-2 w-full border border-[#bdcbbb] bg-white p-2 text-sm" /></label><button type="submit" className={`${primary} w-full`} disabled={busy || !title.trim()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <ArrowRight size={14} />}Create project</button></form>}
+      </div>}
       {project && <Link href={`/studio?id=${encodeURIComponent(project)}`} className={`${primary} mt-5`}>Open project <ArrowRight size={14} /></Link>}
       {error && <p role="alert" className="mt-3 text-sm text-[#944d43]">{error}</p>}
       <div className="mt-auto flex items-center justify-between gap-2 pt-5"><button className="text-xs underline disabled:opacity-50" disabled={disabled || busy} onClick={onReassess}>Reassess this venue</button><button aria-label={`Remove ${item.venue.name} from shortlist`} className="p-2 text-[#936451] hover:bg-[#f2e5d8] disabled:opacity-50" disabled={busy || disabled} onClick={remove}><Trash2 size={15} /></button></div>

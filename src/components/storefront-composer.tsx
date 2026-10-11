@@ -233,7 +233,7 @@ export function StorefrontComposer({ project }: { project: Project }) {
             {downloadable && <a href={compositionFileUrl(project.id, output!.enhancedFile!, true)} className={outlineButton}><Download size={14} />Download image</a>}
           </div>
         </div>
-        <div className="relative min-h-56 bg-[#d9dfd4]">
+        <div className={`relative overflow-hidden bg-[#d9dfd4] ${frontage ? "" : "min-h-56"}`} style={frontage ? { aspectRatio: `${frontage.naturalWidth} / ${frontage.naturalHeight * .955}` } : undefined}>
           {!frontage && <p role="status" className="p-10 text-center text-sm text-[#6b816d]">Loading storefront…</p>}
           <canvas ref={canvas} aria-label="Storefront planter placement" tabIndex={0} onPointerDown={startDrag} onPointerMove={move} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onKeyDown={nudge} className={`w-full touch-none outline-offset-4 ${frontage && !showingRender ? "block" : "hidden"} ${view === "placement" && !locked ? "cursor-grab active:cursor-grabbing" : ""}`} />
           {showingRender && <div className="relative">
@@ -261,7 +261,6 @@ export function StorefrontComposer({ project }: { project: Project }) {
           <button type="button" disabled={!placements.length || locked || state?.configured === false} onClick={() => void produce()} className="inline-flex items-center justify-center gap-2 bg-[#28543c] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#183e2a] disabled:cursor-not-allowed disabled:opacity-45">{locked ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}{job ? (job.stage === "checking" ? "Checking result…" : "Rendering…") : busy ? "Preparing scene…" : "AI Enhance"}</button>
         </div>
       </div>
-      <p className="text-[11px] text-[#7c8977]">One paid render. Unchanged layouts reuse saved results.</p>
       {state?.configured === false && <p className="text-xs text-[#906f51]">AI Enhance is not enabled on this server.</p>}
 
       {savedOutputs.length > 0 && <section aria-label="Saved outputs" className="border-t border-[#d2d9cc] pt-5">

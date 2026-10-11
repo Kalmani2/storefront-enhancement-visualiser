@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { reservePaidRequest } from "../usage-budget";
 import sharp from "sharp";
 import { prepareCutout } from "./images";
 import { locked, readAsset, readStoredAsset, readAssetFile, writeAssetFile, runtime, writeAsset } from "./store";
@@ -8,7 +9,7 @@ import { extractionPrompt, PlanterError } from "./validation";
 export function imageModel() { return process.env.OPENAI_IMAGE_MODEL || "gpt-image-1.5"; }
 
 export async function queueExtraction(id: string, settings: ExtractionSettings) {
-  if (!process.env.OPENAI_API_KEY) throw new PlanterError("Set OPENAI_API_KEY in .env.local and restart the local server to extract a planter.", 503);
+  if (!process.env.OPENAI_API_KEY) throw new PlanterError("Configure OPENAI_API_KEY on this server to extract a planter (.env.local locally, Environment Variables on Vercel).", 503);
   await readAsset(id);
   return locked(id, async () => {
     const asset = await readStoredAsset(id);
@@ -43,6 +44,7 @@ async function requestExtraction(id: string, settings: ExtractionSettings) {
     const marked = await sharp(source).composite([{ input: svg }]).png().toBuffer();
     form.append("image[]", new Blob([new Uint8Array(marked)], { type: "image/png" }), "selection-guide.png");
   }
+  await reservePaidRequest("extraction");
   const response = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, body: form,
     signal: AbortSignal.timeout(process.env.VERCEL === "1" ? 220_000 : 360_000),
