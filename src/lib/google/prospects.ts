@@ -6,7 +6,7 @@ export type GoogleCategory = typeof categories[number];
 export const categoryProfiles: Record<GoogleCategory, { query: string; type: string; matches: string[] }> = {
   cafe: { query: "independent cafes", type: "cafe", matches: ["cafe", "coffee_shop", "tea_house"] },
   restaurant: { query: "independent restaurants", type: "restaurant", matches: ["restaurant"] },
-  bar: { query: "independent wine bars and pubs", type: "bar", matches: ["bar", "pub", "wine_bar"] },
+  bar: { query: "independent wine bars and pubs", type: "bar", matches: ["bar", "pub", "wine_bar", "cocktail_bar"] },
   "hair salon": { query: "independent hair salons", type: "hair_salon", matches: ["hair_salon", "hair_care", "barber_shop"] },
   shop: { query: "independent clothing boutiques", type: "clothing_store", matches: ["clothing_store"] },
 };

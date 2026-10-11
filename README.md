@@ -4,13 +4,13 @@ A prototype for the Innate AI take-home task: discover London venues, inspect st
 
 Built with Next.js, TypeScript, Tailwind CSS, shadcn/ui and Lucide icons.
 
-Demo: [Storefront Visualiser](https://storefront-enhancement-visualiser.vercel.app). Start at **Library → Submission examples** for DUCKSOUP, Salon64 and KOZZEE, or use Venue search to try the workflow yourself.
+Demo: [Storefront Visualiser](https://storefront-enhancement-visualiser.vercel.app). Start at **Library → Submission examples** for completed before/after proposals at Salon64, KOZZEE and Thirst Bar Soho, or use Venue search to try the workflow yourself.
 
 ## Features
 
 - Automatic frontage discovery: mixed business searches, entrance/identity/placement checks, one Street View retry and Google Places photo fallback. Approved venues are saved separately from projects and reused without repeated vision calls.
 - **Search** a named business or address; **Discover** automatically finds three suitable new venues in a London area.
-- **Submission examples** shows automatically selected venues with before/after images, supplied planter references, addresses and selection reasons. Open it from Library or at `/examples`.
+- **Submission examples** shows before/after images, supplied planter references, addresses and selection reasons. Thirst uses an owner-selected Street View; Salon64 and KOZZEE use automatically selected frontages. The original three-venue unseeded discovery run is documented in `design.md`. Open the gallery from Library or at `/examples`.
 - Compare up to five outdoor Street View candidates and adjust camera direction and framing.
 - Save the selected Street View with a project, choose approved planters, automatically estimate scale, and drag arrangements onto the storefront.
 - Export basic compositions or run a separate Medium AI Enhance edit. Both outputs are retained.

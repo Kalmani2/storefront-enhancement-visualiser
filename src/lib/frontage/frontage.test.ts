@@ -77,6 +77,25 @@ describe("frontage acceptance and reframing", () => {
 });
 
 describe("bounded, resumable discovery", () => {
+  it("assesses operational cocktail bars without bypassing image checks", async () => {
+    const s = setup();
+    s.run.placeId = venue.placeId;
+    vi.mocked(s.dep.venue).mockResolvedValue({ ...venue, name: "Test Cocktail Bar", primaryType: "cocktail_bar", category: "cocktail bar" });
+    await s.finish();
+    expect(s.run.approvedIds).toEqual([venue.placeId]);
+    expect(s.dep.assess).toHaveBeenCalledTimes(1);
+  });
+
+  it("still excludes closed cocktail bars before making image calls", async () => {
+    const s = setup();
+    s.run.placeId = venue.placeId;
+    vi.mocked(s.dep.venue).mockResolvedValue({ ...venue, primaryType: "cocktail_bar", businessStatus: undefined });
+    await s.finish();
+    expect(s.run.approvedIds).toEqual([]);
+    expect(s.dep.image).not.toHaveBeenCalled();
+    expect(s.dep.assess).not.toHaveBeenCalled();
+  });
+
   it("automatically saves three approvals and stops without checking the rest", async () => {
     const s = setup(10); await s.finish();
     expect(s.run.status).toBe("complete"); expect(s.run.approvedIds).toHaveLength(3);

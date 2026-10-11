@@ -1,91 +1,90 @@
-﻿# Design: storefront capture and planter visualisation
+﻿# Storefront visualisation — design
 
-## Approach
+## 1. Overview
 
-Google Places supplies London prospects; Street View or Places photos supply their real entrances. The client's product photographs become reusable planter assets, then scene-aware visualisations. Next.js serves the interface and APIs; Supabase stores discovery decisions, projects, product revisions and renders.
+The prototype finds suitable London businesses, captures their real entrances and shows how the client's planters could look outside them.
 
-Venue selection and image acceptance are automatic. An operator chooses the product and adjusts its placement. The output is a visual proposal, not a measured installation plan.
+The workflow is:
 
-## Automated venue selection
+**Find venues → check the frontage → prepare the product → place and render → review**
 
-An area search combines cafes, restaurants and salons within a London boundary, deduplicates listings and ranks operational businesses with physical street addresses. A known-chain exclusion list screens for likely independents; ownership is not independently verified.
+Venue selection and photograph acceptance are automated. Product choice and final placement are adjusted in Studio. Next.js provides the application; Supabase stores the shared library, images and results.
 
-`gpt-4.1-mini` assesses photographs through a structured response. Application code requires:
+## 2. Finding suitable venues
 
-- Visible evidence confirming the expected business, normally matching signage.
-- A usable exterior view of the actual entrance.
-- Visible ground for at least one planter beside the entrance.
-- Bare or lightly planted frontage with room for improvement.
-- Sufficient image quality to judge the doorway and ground.
+Google Places supplies cafes, restaurants, salons and similar businesses within a London search area. The system removes duplicates, checks business type and operational status, and excludes known chains. This identifies likely independents rather than proving ownership.
 
-Wrong or uncertain identity, interiors, hidden entrances, unusable ground and substantial existing planting cannot pass. Moderate perspective and pedestrians away from the placement area are recorded as caveats.
+A vision model checks each frontage. Approval requires a recognisable business, a visible entrance, usable pavement and bare or lightly planted surroundings. A few existing pots are acceptable if there is room for a useful improvement. Heavily planted entrances and locations without visible placement space are rejected.
 
-## Image sourcing and fallback
+### Automatically selected examples
 
-Street geometry and nearby outdoor panorama probes produce cameras ranked by distance, angle and capture date. Initial heading points toward the venue location. Stored framing includes panorama ID, camera coordinates, heading, horizontal field of view (FOV), pitch, dimensions and capture date. A nearby camera does not prove venue identity.
+The Soho search selected these venues without being given their names or requiring manual acceptance:
 
-For an identified but poorly framed entrance, normalized doorway coordinates drive correction:
+| Venue | Address and postcode | Why it qualified |
+| --- | --- | --- |
+| DUCKSOUP | 41 Dean St, London W1D 4PY | Matching signage, visible entrance and bare ground beside it. |
+| Salon64 | 14 Bateman St, London W1D 3AG | Clearly identified doorway with unplanted pavement alongside it. |
+| KOZZEE Cafe Soho | 193 Wardour St, London W1F 8ZF | Recognisable frontage, unobstructed entrance and room for planting. |
 
-```text
-heading correction = atan((2 * entranceCentreX - 1) * tan(FOV / 2))
-```
+The featured gallery includes Salon64, KOZZEE and Thirst Bar Soho (53 Greek St, London W1D 3DR). Thirst was requested by name and initially assessed automatically; the owner then selected a different Street View for the final composition. That frame is labelled manually selected and does not inherit the earlier approval. All three examples show the original frontage, product references and reviewed output; the unseeded discovery evidence above remains separate.
 
-Pitch aims below the doorway centre to include pavement. Corrections are bounded to 30 degrees of heading, FOV 45–90 degrees and pitch −20–15 degrees. Corrected images are reassessed; wrong-facing or obstructed views try another camera.
+## 3. Capturing the real entrance
 
-Each venue receives at most two Street View attempts, then two Places photos under the same acceptance criteria. If none passes, it is skipped. The system never fabricates a replacement storefront. API errors are recorded separately from unsuitable venues.
+Street View is the first source. Nearby panoramas are ranked by distance, viewing angle and recency. The camera points towards the business location, with a field of view wide enough to include the doorway and pavement. Camera direction, field of view and pitch are retained so an accepted view can be reproduced.
 
-## Selected venues and evidence
+A location pin alone is insufficient: the vision model must confirm the business from visible evidence, normally its signage. It also checks whether the entrance and adjacent ground are clear enough for composition. Moderate perspective or pedestrians elsewhere in the photograph need not make it unusable.
 
-On 11 October 2026, automatic Soho run `d29298e6-e177-489e-b225-3c615e21b4f7` assessed four venues using ten images and selected three without supplied venue names or manual acceptance overrides:
+### When the first image is unsuitable
 
-| Venue | Address and postcode | Acceptance evidence / source | Supplied product |
-| --- | --- | --- | --- |
-| DUCKSOUP | 41 Dean St, London W1D 4PY | Matching sign, visible entrance and bare ground. Street View, October 2022. | `planter_image1.jpg`: rust-coloured rectangular pair. |
-| Salon64 | 14 Bateman St, London W1D 3AG | Matching sign, clear doorway and bare pavement. Places photo credited to Salon64; date unknown. | Originally `planter_image2.jpg`: white pair; the current saved example uses the supplied long cream planter (`planter_image5.jpg`). |
-| KOZZEE Cafe Soho | 193 Wardour St, London W1F 8ZF | Matching sign, visible entrance and unplanted ground. Street View, October 2025. | `planter_image3.jpg`: black cylinder. |
+If the correct doorway is visible but poorly framed, its position in the image guides adjustments to camera direction, zoom and vertical angle. The new image is checked again. A wrong-facing or obstructed view instead triggers another camera.
 
-**Rejections and fallback:** Sacred Grounds was skipped after a church view, an unconfirmed frontage and two interior photos. Salon64 passed only after two wrong-business Street Views and a branding-only photo were rejected. An earlier Toi & Moi attempt failed for substantial existing planting. Successful geometric reframing has automated test coverage but was not demonstrated by this run.
+After two Street View attempts, the system tries up to two Google Places photos using the same checks. If none passes, it skips the venue. It does not invent an entrance or accept an uncertain identity.
 
-Decisions remain at `/api/frontage-discovery/d29298e6-e177-489e-b225-3c615e21b4f7`. The three venues were rendered; Salon64 received a second layout moving the pair away from the doorway after manual inspection. `/examples` displays saved, approved compositions with originals and product references; deleting a project removes its example.
+For example, Salon64's Street View images showed other businesses. A branding-only fallback photo was also rejected before a clear exterior photograph passed. Sacred Grounds was skipped because its available images showed the wrong building or interiors. Toi & Moi was rejected for substantial existing planting.
 
-## Product extraction and compositing
+## 4. Preparing and placing the planters
 
-1. **Extract and approve.** `gpt-image-1.5` at Medium isolates containers and their plants together into a transparent PNG. Extraction preserves visible detail; optional reconstruction infers obscured portions. The operator approves a revision. Original photographs, cutouts and base-contact coordinates are retained.
-2. **Estimate scale.** `gpt-4.1` identifies a complete doorway, person or chair with an assumed typical height, such as a 2.1 m doorway. Container height is estimated separately from foliage:
+### Reusable product assets
 
-   ```text
-   arrangement image height = reference image height
-     × assumed container metres ÷ reference metres
-     ÷ container fraction of the product image
-   ```
+The supplied photographs are processed into transparent assets, keeping each container and its plants together. The original photograph remains available for comparison. Optional reconstruction can fill obscured areas, but those inferred details require review. An approved extraction can be reused across venues.
 
-   Approximate horizon geometry adjusts size with ground depth. Missing references yield a labelled low-confidence fallback. Neither product dimensions nor scene dimensions are measured from a single uncalibrated photograph.
-3. **Place.** The saved frontage opens in Studio. Dragging, size, facing, flip and duplication control an affine preview with contact shadows. Basic export uses the same geometry. There is no reconstructed 3D model.
-4. **Integrate.** One `gpt-image-2` Medium edit receives the placement guide, untouched storefront and exact extracted products. Constraints specify container count, shape, material, colour, foliage, position and angle. The model resolves perspective, lighting, reflections and grounding. Its complete output is used to avoid seams from blending incompatible backgrounds.
-5. **Review.** A separate vision call compares the result with the original scene and product references. Before/after comparison and version history support inspection.
+### Realistic scale
 
-Product references constrain generation but cannot guarantee unseen geometry or fine detail. Full-image generation can alter surrounding details despite preservation instructions; the assignment's requirement that everything else remain unaltered is therefore not guaranteed.
+Scene analysis looks for a complete reference object, such as a doorway, person or chair. Its image height and assumed physical height establish an approximate scale. For example, a doorway assumed to be 2.1 metres tall provides a comparison for the estimated container height, excluding foliage.
 
-## Rejection criteria
+The calculation accounts for the foliage extending above the container and adjusts apparent size as placement moves closer to or farther from the camera. If there is no reliable reference, the app labels the estimate as low confidence and allows visual adjustment. Exact dimensions cannot be recovered from these uncalibrated photographs.
 
-Do not send proposals containing substituted products, missing/extra containers, major scale errors, floating bases, visible background patches, blocked access, changed signage, moved people or material building alterations.
+### Composition
 
-Automated review scores identity, grounding and scene preservation from 1–5. Serious failures or scores ≤2 reject; all scores ≥4 pass; other results require review. Unavailable review also requires inspection. Export requires a pass or explicit manual approval, with overrides recorded. The Salon64 correction demonstrates that model approval cannot replace final inspection before outreach.
+Studio uses the saved frontage directly. The operator chooses a planter, drags it into position and adjusts size and facing. This produces a basic preview with contact shadows.
 
-## Imagery rights
+AI Enhance receives that placement guide, the untouched storefront and the actual extracted product references. It integrates perspective, lighting, reflections and ground contact in one image edit. Instructions preserve container count, shape, material, colour and planting rather than asking for generic planters.
 
-Image acceptance and reuse permission are separate. API access, public visibility and venue consent are not treated as blanket permission to edit a provider's photograph.
+Extraction uses `gpt-image-1.5`; enhancement uses `gpt-image-2`, both at Medium. Vision models handle frontage checks, scale estimation and final review. This approach avoids building a 3D asset from one photograph, while allowing plausible changes in viewing angle.
 
-The project owner asserted permission for prototype imagery; the app records that assertion, sources and attribution without independently verifying it. Commercial deployment requires documented rights covering storage, editing and distribution, provider-term compliance, and retention/privacy controls. Otherwise, use licensed, commissioned or venue-supplied photographs. Attribution alone is insufficient evidence of permission.
+## 5. Quality checks and limitations
 
-## Cost controls and scale
+A separate automated review compares the finished image with the storefront and product references. Failed or uncertain results require explicit approval before export. The original and enhanced views can be compared in Studio.
 
-Discovery targets three approvals with limits of ten candidates and twenty image/review attempts. Decisions are cached for up to 30 days against source geometry/fingerprints, model and rules version. Changed imagery cannot inherit approval.
+A result should not reach a venue owner if it has:
 
-Product assets and scale analyses are reused. Placement adjustments incur no image-generation calls. Completed unchanged layouts reuse results; enhancement makes one image request with no automatic paid retry. Saved raw output supports recovery without regeneration.
+- Substituted products or missing/extra containers.
+- Implausible scale, floating bases, poor shadows or visible background patches.
+- Planters blocking access or conflicting with foreground objects.
+- Altered signage, people or significant building details.
 
-Local and deployed AI now share a UTC-day allowance of 20 extractions, 40 compositions and 200 vision assessments. Before dispatch, a create-only receipt in the private Supabase bucket reserves a slot; unique object keys enforce the cap across server instances. Failed requests retain their slot, storage errors fail closed, and cached results do not reserve a slot. No database migration is needed. `ENABLE_PAID_AI=false` is an emergency stop; the previous hosted-only flags are no longer used. Google usage is separate: selecting a search result now automatically loads up to five views, while discovery retains its bounded retry budget.
+Full-image enhancement gives coherent lighting and perspective without patch boundaries, but it can change surrounding details. It therefore does not guarantee the brief's requirement that everything else remain unaltered. Product detail and unseen surfaces can also drift. Final inspection remains necessary; automated review and manual overrides are not guarantees of correctness.
 
-The four submission image calls, including Salon64's correction, recorded estimates of $0.063–$0.072 each, approximately $0.268 total. Google, discovery, calibration and review costs are additional; these are app estimates, not invoices.
+## 6. Imagery rights
 
-At 5,000+ venues per week, browser-driven batches would move to queued workers with durable jobs, account budgets, retention controls and measured acceptance accuracy. Selection and framing would remain automatic; product fidelity and output review remain quality limits.
+A usable image is not automatically a reusable image. Public visibility, API access and permission from a venue owner are not treated as blanket permission to edit a provider's photograph.
+
+The project owner has asserted permission for the prototype imagery. Sources and attribution are retained, but the application does not independently verify that permission. Commercial use requires documented rights covering storage, editing and distribution, alongside provider terms and privacy requirements. Where those rights are unavailable, licensed, commissioned or venue-supplied photography is the alternative.
+
+## 7. Cost and operating at scale
+
+Discovery uses bounded attempts rather than unlimited retries. Product assets, image assessments and scale estimates are reused. Placement adjustments do not generate images, and an unchanged completed layout can reuse its render. Each enhancement makes one image-generation request; paid generation is not retried automatically. Shared daily limits cap AI requests.
+
+Recorded example renders cost approximately $0.06–$0.07 each for image generation, with Google requests and vision analysis charged separately.
+
+At 5,000+ venues per week, discovery would move from browser-driven batches to queued background workers, with durable jobs, account budgets and image-retention controls. Selection and framing would remain automatic. Measuring false approvals and product fidelity would be essential before expanding outreach.

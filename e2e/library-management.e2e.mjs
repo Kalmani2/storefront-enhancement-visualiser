@@ -4,7 +4,7 @@ import sharp from "sharp";
 test("manage shared library details and confirm deletions on desktop and mobile", async ({ page }) => {
   const image = await sharp({ create: { width: 320, height: 240, channels: 3, background: "#b7c7a8" } }).png().toBuffer();
   const id = "11111111-1111-4111-8111-111111111111";
-  let projects = [{ id: "google-demo", title: "Soho cafe", venueId: "demo", source: "google", sourceUrl: "https://maps.google.com", createdAt: "2026-10-10", image: { provider: "uploaded", storagePath: "storefronts/google-demo/front.png", originalFilename: "front.png", width: 320, height: 240 } }];
+  let projects = [{ id: "google-demo", title: "Soho cafe", address: "1 Greek Street, London", category: "coffee shop", venueId: "demo", source: "google", sourceUrl: "https://maps.google.com", createdAt: "2026-10-10", image: { provider: "uploaded", storagePath: "storefronts/google-demo/front.png", originalFilename: "front.png", width: 320, height: 240 } }];
   let assets = [{ id, name: "Garden pair", status: "approved", approvedRevisionId: "22222222-2222-4222-8222-222222222222", createdAt: "2026-10-10", updatedAt: "2026-10-10", originalFilename: "garden.png", originalFile: "original.png", source: { width: 320, height: 240 }, revisions: [{ id: "22222222-2222-4222-8222-222222222222", width: 320, height: 240 }] }];
   let deletes = 0;
   const calls = [], errors = [];
@@ -29,6 +29,9 @@ test("manage shared library details and confirm deletions on desktop and mobile"
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Garden pair" })).toBeVisible();
+  await expect(page.getByText("Saved work", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("coffee shop", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 Greek Street, London", { exact: true })).toBeVisible();
   await expect(page.getByText("Approved", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Ready to use", { exact: true })).toHaveCount(0);
   await expect(page.getByAltText("Frontage for Soho cafe")).toHaveAttribute("src", "/api/projects/google-demo/image");
