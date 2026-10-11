@@ -21,6 +21,7 @@ export type PlanterRevision = {
   width: number;
   height: number;
   contactPoint: ContactPoint;
+  groundContacts?: (ContactPoint & { width: number })[];
   transparency: number;
   warnings: string[];
   usage?: unknown;

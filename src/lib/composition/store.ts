@@ -61,6 +61,8 @@ export function parsePlacements(value: unknown): Placement[] {
     const id = validId(p.id);
     if (ids.has(id)) throw new PlanterError("Duplicate planter placement.");
     ids.add(id);
-    return { id, assetId: validId(p.assetId), revisionId: validId(p.revisionId), x: p.x, y: p.y, height: p.height, perspective: p.perspective, shadow: p.shadow };
+    if (p.yaw !== undefined && (!Number.isFinite(p.yaw) || Math.abs(p.yaw) > 60)) throw new PlanterError("Choose an angle between -60 and 60 degrees.");
+    if (p.flip !== undefined && typeof p.flip !== "boolean") throw new PlanterError("Invalid arrangement direction.");
+    return { id, assetId: validId(p.assetId), revisionId: validId(p.revisionId), x: p.x, y: p.y, height: p.height, perspective: p.perspective, shadow: p.shadow, ...(p.yaw === undefined ? {} : { yaw: p.yaw }), ...(p.flip === undefined ? {} : { flip: p.flip }) };
   });
 }

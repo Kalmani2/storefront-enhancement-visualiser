@@ -4,17 +4,20 @@ import sharp from "sharp";
 import type { Project } from "../projects";
 import type { PlanterAsset } from "../planters/types";
 import { PlanterError } from "../planters/validation";
-import { estimatedHeight, fallbackEstimate, placementGeometry } from "./geometry";
-import { parsePlacements, readComposition, readCompositionFile } from "./store";
-import { createComposition, runEnhancement } from "./jobs";
+import { estimatedHeight, fallbackEstimate, placementGeometry, projectedPoint } from "./geometry";
+import { parsePlacements, readComposition, readCompositionFile, writeComposition } from "./store";
+import { createComposition, runEnhancement, recoverComposition } from "./jobs";
 import { estimateScale } from "./scale";
+import { composeInstallation } from "./installation";
+import { composeScene, sceneEditMask } from "./scene";
+import { findGroundContacts, measureContainerFraction } from "./contacts";
 import type { Placement } from "./types";
 
-const memory = vi.hoisted(() => ({ files: new Map<string, Buffer>(), asset: {} as PlanterAsset, planter: Buffer.alloc(0) }));
+const memory = vi.hoisted(() => ({ files: new Map<string, Buffer>(), asset: {} as PlanterAsset, planter: Buffer.alloc(0), failEnhancedWrite: false }));
 vi.mock("../storage", () => ({
   storageConfigured: () => true,
   getFile: async (key: string) => { const bytes = memory.files.get(key); if (!bytes) throw new PlanterError("Missing", 404); return bytes; },
-  putFile: async (key: string, bytes: Buffer, upsert: boolean) => { if (memory.files.has(key) && !upsert) throw new Error("Duplicate file"); memory.files.set(key, bytes); },
+  putFile: async (key: string, bytes: Buffer, upsert: boolean) => { if (memory.failEnhancedWrite && key.endsWith("-enhanced.png")) { memory.failEnhancedWrite = false; throw new Error("Temporary write failure"); } if (memory.files.has(key) && !upsert) throw new Error("Duplicate file"); memory.files.set(key, bytes); },
 }));
 vi.mock("../project-store", () => ({ projectId: (id: string) => id }));
 vi.mock("../planters/store", () => ({
@@ -28,11 +31,12 @@ const project: Project = { id: "google-test-1234", title: "Cafe", venueId: "plac
 const placement: Placement = { id: "33333333-3333-4333-8333-333333333333", assetId, revisionId, x: .3, y: .8, height: .4, perspective: false, shadow: .6 };
 
 beforeEach(async () => {
-  memory.files.clear();
+  memory.files.clear(); memory.failEnhancedWrite = false;
   memory.files.set("storefronts/test/source.png", await sharp({ create: { width: 320, height: 240, channels: 3, background: "#aabbcc" } }).png().toBuffer());
   memory.planter = await sharp(Buffer.from('<svg width="100" height="200"><rect x="20" y="20" width="60" height="180" fill="green"/></svg>')).png().toBuffer();
   memory.asset = { id: assetId, name: "Planter", approvedRevisionId: revisionId, revisions: [{ id: revisionId, width: 100, height: 200, contactPoint: { x: .5, y: 1 } }] } as PlanterAsset;
-  vi.stubEnv("OPENAI_API_KEY", "test-key"); vi.stubEnv("OPENAI_IMAGE_MODEL", "gpt-image-1.5");
+  vi.stubEnv("OPENAI_API_KEY", "test-key"); vi.stubEnv("OPENAI_COMPOSITION_MODEL", "");
+  await writeComposition(project.id, { sourceKey: "storefronts/test/source.png", draft: [], calibrations: { [`${assetId}:${revisionId}`]: { ...fallbackEstimate(assetId, revisionId), analysisVersion: 2 } }, versions: [] });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
@@ -53,10 +57,10 @@ describe("scale and placement", () => {
     expect(parsePlacements([placement])).toEqual([placement]);
   });
   it("uses structured visual reference estimates and falls back when no reference exists", async () => {
-    const value = { referenceDetected: true, referenceTopY: .3, referenceBottomY: .8, referenceX: .5, referenceHeightMetres: 2, containerHeightMetres: .6, containerFraction: .5, groundX: .3, groundY: .8, confidence: "medium", reason: "Doorway assumed 2 m." };
+    const value = { referenceDetected: true, referenceName: "Door", referenceTop: { x: .5, y: .3 }, referenceBottom: { x: .5, y: .8 }, referenceHeightMetres: 2, containerTopY: .5, containerBottomY: 1, containerHeightMetres: .6, containerCount: 1, productDescription: "Green test planter", shape: "rectangular", ground: { x: .3, y: .8 }, facadeGroundLeft: { x: .1, y: .8 }, facadeGroundRight: { x: .9, y: .8 }, entrance: { x: .4, y: .3, width: .2, height: .5 }, lighting: "Soft daylight", perspective: "Front facing", reason: "Doorway assumed 2 m." };
     const fetcher = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ output: [{ content: [{ type: "output_text", text: JSON.stringify(value) }] }] }), { status: 200 }));
     vi.stubGlobal("fetch", fetcher);
-    expect(await estimateScale(project, assetId, revisionId)).toMatchObject({ method: "vision", height: .3, confidence: "medium" });
+    expect(await estimateScale(project, assetId, revisionId)).toMatchObject({ method: "vision", confidence: "medium", analysisVersion: 2 });
     value.referenceDetected = false;
     expect(await estimateScale(project, assetId, revisionId)).toMatchObject({ method: "heuristic", confidence: "low" });
     vi.stubEnv("OPENAI_API_KEY", "");
@@ -77,30 +81,41 @@ describe("composition outputs", () => {
     expect(pixel(1, pixels.info.height - 1)).toEqual([170, 187, 204]);
     expect(fetcher).not.toHaveBeenCalled(); expect(state.versions).toHaveLength(1);
   });
-  it("requests Medium once and only applies generated pixels inside the permitted region", async () => {
-    const generated = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: "red" } }).png().toBuffer();
-    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ b64_json: generated.toString("base64") }], usage: { total_tokens: 123 } }), { status: 200 })); vi.stubGlobal("fetch", fetcher);
+  it("renders a new product view in Medium, protects the source and reuses unchanged layouts", async () => {
+    const generated = await sharp({ create: { width: 1280, height: 960, channels: 3, background: "red" } }).png().toBuffer();
+    const fetcher = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("images/edits") ? { data: [{ b64_json: generated.toString("base64") }], usage: { input_tokens_details: { image_tokens: 1000, text_tokens: 100 }, output_tokens: 349 } } : { output: [{ content: [{ type: "output_text", text: JSON.stringify({ product: 4, grounding: 4, scene: 5, summary: "Good", issues: [], fatal: false }) }] }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
     const started = await createComposition(project, [placement], true);
     await expect(createComposition(project, [placement], true)).rejects.toThrow("already running");
-    await runEnhancement(project, started.job!.id);
+    await runEnhancement(project, started.job!.id); await runEnhancement(project, started.job!.id);
     const saved = await readComposition(project), version = saved.versions[0];
-    expect(saved.job).toBeUndefined(); expect(version.quality).toBe("medium"); expect(version.usage).toEqual({ total_tokens: 123 });
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    const form = fetcher.mock.calls[0][1].body as FormData;
-    expect(form.get("quality")).toBe("medium"); expect(form.get("size")).toBe("1536x1024"); expect(form.get("mask")).toBeTruthy();
-    const basic = await sharp(await readCompositionFile(project.id, version.basicFile)).ensureAlpha().raw().toBuffer();
+    expect(saved.error).toBeUndefined(); expect(saved.job).toBeUndefined(); expect(version.quality).toBe("medium");
+    const calls = fetcher.mock.calls.filter(c => c[0].includes("images/edits")); expect(calls).toHaveLength(1);
+    const form = calls[0][1].body as FormData;
+    expect(form.get("quality")).toBe("medium"); expect(form.get("size")).toBe("1280x960"); expect(form.get("model")).toBe("gpt-image-2"); expect(form.get("background")).toBe("opaque"); expect(form.get("mask")).toBeTruthy(); expect(form.get("prompt")).toContain("convincing photograph"); expect(form.getAll("image[]")).toHaveLength(3);
+    const source = await sharp(await readCompositionFile(project.id, version.sourceFile!)).ensureAlpha().raw().toBuffer();
     const enhanced = await sharp(await readCompositionFile(project.id, version.enhancedFile!)).ensureAlpha().raw().toBuffer();
     const mask = await sharp(await readCompositionFile(project.id, version.maskFile!)).greyscale().raw().toBuffer();
-    const foreground = await sharp(await readCompositionFile(project.id, version.foregroundFile!)).greyscale().raw().toBuffer();
     let changed = 0;
     for (let p = 0; p < mask.length; p++) {
-      const original = basic.subarray(p * 4, p * 4 + 4), edited = enhanced.subarray(p * 4, p * 4 + 4);
-      if (mask[p] === 0 && !original.equals(edited)) throw new Error(`Outside pixel ${p} changed`);
-      if (foreground[p] === 255 && [...original].some((value, index) => Math.abs(value - edited[index]) > 18)) throw new Error("Product lighting changed beyond the permitted bound");
-      if (!original.equals(edited)) changed++;
+      const before = source.subarray(p * 4, p * 4 + 4), after = enhanced.subarray(p * 4, p * 4 + 4);
+      if (mask[p] < 4 && !before.equals(after)) throw new Error('Protected source pixel changed: ' + p);
+      if (!before.equals(after)) changed++;
     }
     expect(changed).toBeGreaterThan(100);
-    expect(form.getAll("image[]")).toHaveLength(2);
+    expect(version.review?.status).toBe("passed"); expect(version.estimatedCostUsd).toBeGreaterThan(0);
+    const cached = await createComposition(project, [{ ...placement, id: "44444444-4444-4444-8444-444444444444" }], true);
+    expect(cached.versions).toHaveLength(1); expect(cached.job).toBeUndefined(); expect(cached.resultVersionId).toBe(version.id);
+    const retry = await createComposition(project, [placement], true, true); expect(retry.job).toBeDefined(); expect(retry.versions).toHaveLength(2);
+  });
+  it("retains the paid scene and recovers a failed export without a second image call", async () => {
+    const generated = await sharp({ create: { width: 1280, height: 960, channels: 3, background: "red" } }).png().toBuffer();
+    const fetcher = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("images/edits") ? { data: [{ b64_json: generated.toString("base64") }] } : { output: [{ content: [{ type: "output_text", text: JSON.stringify({ product: 4, grounding: 4, scene: 5, summary: "Good", issues: [], fatal: false }) }] }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher); memory.failEnhancedWrite = true;
+    const started = await createComposition(project, [placement], true); await runEnhancement(project, started.job!.id);
+    let saved = await readComposition(project); expect(saved.error).toContain("Temporary write failure"); expect(saved.versions[0].rawFile).toBeTruthy(); expect(saved.versions[0].enhancedFile).toBeUndefined();
+    const recovery = await recoverComposition(project, saved.versions[0].id); await runEnhancement(project, recovery.job!.id);
+    saved = await readComposition(project); expect(saved.error).toBeUndefined(); expect(saved.versions[0].enhancedFile).toBeTruthy(); expect(fetcher.mock.calls.filter(c => c[0].includes("images/edits"))).toHaveLength(1);
   });
   it("retains the basic image on API failure and never retries automatically", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "No credits" } }), { status: 429 })); vi.stubGlobal("fetch", fetcher);
@@ -111,5 +126,46 @@ describe("composition outputs", () => {
     expect(saved.versions[0].enhancedFile).toBeUndefined();
     expect(await readCompositionFile(project.id, saved.versions[0].basicFile)).toBeTruthy();
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("perspective and isolation", () => {
+  it("keeps the chosen ground anchor fixed when turning or flipping a product", () => {
+    for (const flip of [false, true]) for (const yaw of [-60, 0, 60]) {
+      const revision = { width: 400, height: 600, contactPoint: { x: .17, y: .96 } };
+      const geometry = placementGeometry({ ...placement, flip, yaw }, revision, 1280, 960);
+      const point = projectedPoint(geometry, revision.contactPoint);
+      expect(point.x).toBeCloseTo(placement.x * 1280); expect(point.y).toBeCloseTo(placement.y * 960);
+    }
+    expect(() => parsePlacements([{ ...placement, yaw: 90 }])).toThrow();
+  });
+  it("finds separate bases and measures container height without counting foliage", async () => {
+    const bytes = await sharp(Buffer.from('<svg width="200" height="300"><rect x="20" y="160" width="60" height="130" fill="white"/><rect x="110" y="150" width="70" height="125" fill="white"/><circle cx="100" cy="80" r="65" fill="green"/></svg>')).png().toBuffer();
+    const contacts = await findGroundContacts(bytes); expect(contacts).toHaveLength(2); expect(contacts[0].y).toBeGreaterThan(contacts[1].y);
+    expect(await measureContainerFraction(bytes)).toBeGreaterThan(.4); expect(await measureContainerFraction(bytes)).toBeLessThan(.55);
+  });
+  it("rejects a generated solid background and an empty alpha layer", async () => {
+    const source = await sharp({ create: { width: 100, height: 100, channels: 3, background: "blue" } }).png().toBuffer();
+    const empty = await sharp({ create: { width: 100, height: 100, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+    await expect(composeInstallation(source, source, Buffer.alloc(10000,255), Buffer.alloc(10000,255),100,100,100)).rejects.toThrow("opaque");
+    await expect(composeInstallation(source, empty, Buffer.alloc(10000,255), Buffer.alloc(10000,255),100,100,100)).rejects.toThrow("empty");
+  });
+});
+
+
+describe("scene integration", () => {
+  it("allows complete perspective reconstruction inside the region while preserving the scene and attribution outside", async () => {
+    const width = 100, height = 100;
+    const original = await sharp({ create: { width, height, channels: 4, background: "blue" } }).png().toBuffer();
+    const generated = await sharp({ create: { width, height, channels: 3, background: "red" } }).png().toBuffer();
+    const region = Buffer.alloc(width * height);
+    for (let y = 20; y < height; y++) for (let x = 25; x < 75; x++) region[y * width + x] = 255;
+    const result = await composeScene(original, generated, region, width, height);
+    const pixels = await sharp(result.enhanced).ensureAlpha().raw().toBuffer();
+    const pixel = (x: number, y: number) => [...pixels.subarray((y * width + x) * 4, (y * width + x) * 4 + 3)];
+    expect(pixel(50,50)).toEqual([255,0,0]); expect(pixel(10,50)).toEqual([0,0,255]); expect(pixel(50,99)).toEqual([0,0,255]);
+    const mask = await sharp(await sceneEditMask(region,width,height)).ensureAlpha().raw().toBuffer();
+    expect(mask[(50*width+50)*4+3]).toBe(0); expect(mask[(50*width+10)*4+3]).toBe(255);
   });
 });

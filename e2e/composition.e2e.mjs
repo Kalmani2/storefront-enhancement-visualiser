@@ -19,13 +19,14 @@ test("selected Street View, cached calibration, dragging, export and separate Me
   await page.route("**/api/projects/*/composition/files/*", route => route.fulfill({ contentType: "image/png", body: frontage }));
   await page.route("**/api/projects/*/composition", route => {
     if (route.request().method() === "GET") {
-      if (state.job) { state.versions.at(-1).enhancedFile = "enhanced.png"; delete state.job; }
+      if (state.job) { state.versions.at(-1).enhancedFile = "enhanced.png"; state.versions.at(-1).review = { status: "review", summary: "Check product identity and ground contact.", issues: [], product: 3, grounding: 4, scene: 5 }; delete state.job; }
       return route.fulfill({ json: state });
     }
     const body = route.request().postDataJSON();
+    if (body.action === "approve") { state.versions.at(-1).review.status = "passed"; return route.fulfill({ json: state }); }
     if (body.action === "calibrate") {
       calibrationCalls++;
-      const estimate = { assetId, revisionId, method: "vision", confidence: "medium", reason: "Scaled using a typical 2.1 m doorway.", reference: { top: { x: .6, y: .3 }, bottom: { x: .6, y: .78 }, heightMetres: 2.1 }, containerHeightMetres: .6, containerFraction: .4, height: .34, ground: { x: .4, y: .8 }, horizon: .4 };
+      const estimate = { assetId, revisionId, analysisVersion: 2, method: "vision", confidence: "medium", reason: "Scaled using a typical 2.1 m doorway.", reference: { top: { x: .6, y: .3 }, bottom: { x: .6, y: .78 }, heightMetres: 2.1 }, containerHeightMetres: .6, containerFraction: .4, height: .34, ground: { x: .4, y: .8 }, horizon: .4 };
       state.calibrations[`${assetId}:${revisionId}`] = estimate;
       return route.fulfill({ json: estimate });
     }
@@ -48,6 +49,11 @@ test("selected Street View, cached calibration, dragging, export and separate Me
   await page.mouse.down(); await page.mouse.move(box.x + box.width * .3, box.y + box.height * .7, { steps: 8 }); await page.mouse.up();
   await expect.poll(() => state.draft.length).toBe(1);
   await expect.poll(() => state.draft[0].x).toBeLessThan(.35);
+  await page.getByLabel("Planter facing").selectOption("custom");
+  await page.getByLabel("Planter angle").fill("25");
+  await page.getByRole("button", { name: "Flip arrangement" }).click();
+  await expect.poll(() => state.draft[0]?.yaw).toBe(25);
+  await expect.poll(() => state.draft[0]?.flip).toBe(true);
   await page.getByRole("button", { name: "Duplicate", exact: true }).click();
   await expect(page.getByLabel("Selected planter").locator("option")).toHaveCount(3);
   await page.getByRole("button", { name: "Save basic output" }).click();
@@ -55,11 +61,16 @@ test("selected Street View, cached calibration, dragging, export and separate Me
   expect(calibrationCalls).toBe(1); expect(enhancementCalls).toBe(0); expect(sourceCalls).toBe(0);
   await page.screenshot({ path: ".cache/composition-desktop.png", fullPage: true });
   await page.getByRole("button", { name: "AI Enhance", exact: false }).click();
-  await expect(page.getByRole("button", { name: "Enhancing", exact: false })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Rendering", exact: false })).toBeDisabled();
   await expect(page.getByAltText("AI enhanced storefront composition")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("link", { name: "Download enhanced", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Approve image" }).click();
   await expect(page.getByRole("link", { name: "Download enhanced", exact: true })).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Download basic", exact: true })).toHaveCount(2);
   expect(enhancementCalls).toBe(1);
+  await page.getByRole("button", { name: "Compare", exact: true }).click();
+  await expect(page.getByAltText("Original storefront for comparison")).toBeVisible();
+  await page.getByLabel("Before and after comparison").fill("35");
   await page.reload();
   await expect(page.getByLabel("Selected planter").locator("option")).toHaveCount(3);
   await page.getByRole("button", { name: "Place Olive planter" }).click();

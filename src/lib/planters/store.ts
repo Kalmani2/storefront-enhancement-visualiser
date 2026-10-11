@@ -180,7 +180,7 @@ async function exportApproved(asset: PlanterAsset, revision: PlanterRevision) {
 function placementData(asset: PlanterAsset, revision: PlanterRevision) {
   return {
     name: asset.name, revisionId: revision.id, width: revision.width, height: revision.height,
-    contactPoint: revision.contactPoint, physicalHeightMetres: null,
+    contactPoint: revision.contactPoint, groundContacts: revision.groundContacts, physicalHeightMetres: null,
     reconstructed: revision.settings.mode === "reconstruct", kind: revision.kind,
     model: revision.model, sourceFilename: asset.originalFilename,
   };

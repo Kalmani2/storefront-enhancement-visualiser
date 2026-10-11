@@ -67,7 +67,7 @@ export async function runExtraction(id: string, jobId: string) {
     const revision: PlanterRevision = {
       id: randomUUID(), createdAt: new Date().toISOString(), kind: "ai", settings,
       model: result.model, prompt: extractionPrompt(settings), width: processed.width, height: processed.height,
-      contactPoint: processed.contactPoint, transparency: processed.transparency, warnings: processed.warnings, usage: result.usage,
+      contactPoint: processed.contactPoint, groundContacts: processed.groundContacts, transparency: processed.transparency, warnings: processed.warnings, usage: result.usage,
     };
     if (settings.mode === "reconstruct") revision.warnings.unshift("Hidden or cropped parts may have been reconstructed by AI. Compare the shape and foliage with the source.");
     await saveRevisionFiles(id, revision.id, processed.png, processed.mask, result.raw);
@@ -118,7 +118,7 @@ export async function saveManualRevision(id: string, parentId: string, bytes: Bu
     const processed = await prepareCutout(bytes);
     const revision: PlanterRevision = {
       ...parent, id: randomUUID(), parentId, kind: "manual", createdAt: new Date().toISOString(),
-      width: processed.width, height: processed.height, contactPoint: processed.contactPoint, transparency: processed.transparency,
+      width: processed.width, height: processed.height, contactPoint: processed.contactPoint, groundContacts: processed.groundContacts, transparency: processed.transparency,
       warnings: [...new Set([...parent.warnings, ...processed.warnings])], usage: undefined,
     };
     await saveRevisionFiles(id, revision.id, processed.png, processed.mask, bytes);

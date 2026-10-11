@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import type { ContactPoint } from "./types";
 import { PlanterError } from "./validation";
+import { findGroundContacts } from "../composition/contacts";
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -47,5 +48,6 @@ export async function prepareCutout(bytes: Buffer) {
   const alpha = Buffer.alloc(cropped.width * cropped.height);
   for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3];
   const mask = await sharp(alpha, { raw: { width: cropped.width, height: cropped.height, channels: 1 } }).png().toBuffer();
-  return { png, mask, width: crop.width, height: crop.height, contactPoint, transparency: Number((transparent / count).toFixed(4)), warnings };
+  const groundContacts = await findGroundContacts(png);
+  return { png, mask, width: crop.width, height: crop.height, contactPoint, groundContacts, transparency: Number((transparent / count).toFixed(4)), warnings };
 }
