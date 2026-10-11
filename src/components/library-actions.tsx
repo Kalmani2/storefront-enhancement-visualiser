@@ -71,7 +71,6 @@ function ItemActions({ kind, name, notes = "", address = "", category = "", disa
             <label className="block text-xs font-semibold" htmlFor={`${fieldId}-category`}>Category<input id={`${fieldId}-category`} maxLength={1000} disabled={busy} value={details.category} onChange={event => setDetails({ ...details, category: event.target.value })} className={`${field} mt-2`} /></label>
           </>}
           <label className="block text-xs font-semibold" htmlFor={`${fieldId}-notes`}>{kind === "project" ? "Project notes" : "Planter notes"}<textarea id={`${fieldId}-notes`} rows={3} maxLength={2000} disabled={busy} value={details.notes} onChange={event => setDetails({ ...details, notes: event.target.value })} placeholder={kind === "project" ? "Ideas or context for this storefront…" : "Materials, dimensions or product details…"} className={`${field} mt-2 resize-y`} /></label>
-          <p className="text-xs leading-5 text-[#768376]">Updates saved details only. Images and existing results stay unchanged; no AI call is made.</p>
         </> : <>
           <p className="break-words text-sm leading-6">Delete <strong>{name}</strong> from the shared library?</p>
           <p className="text-sm leading-6 text-[#768376]">{kind === "project" ? "This permanently removes the project, its saved frontage images and all composite versions. Your planter library is not affected." : "This permanently removes the planter, its original photo, cutouts and all versions. Planters used by saved compositions cannot be deleted."}</p>

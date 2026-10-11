@@ -55,7 +55,7 @@ export function buildRenderPrompt(version: CompositionVersion, state: Compositio
     const name = profile?.description || "Use exactly the supplied product, including its plants and containers.";
     return `Arrangement ${index + 1}: reference image ${reference}; ${profile?.containerCount || "the reference's"} container(s) per arrangement. ${name}
 Ground anchor at ${(p.x * 100).toFixed(1)}% across and ${(p.y * 100).toFixed(1)}% down image 1. Follow the layout guide's total occupied height and footprint. ${p.yaw === undefined ? "Orient the bases parallel to the storefront/pavement edges and reconstruct the sides/top surfaces seen from this street camera." : `Turn the arrangement ${p.yaw} degrees about its vertical axis relative to its product reference; keep it upright, never tilt the whole plant like a flat sticker.`} ${p.flip ? "Reverse the left/right arrangement order as in image 1." : "Preserve the relative order of containers within this arrangement."}
-Scene geometry: ${analysis?.scene?.perspective || "Match the existing pavement and facade perspective."} Lighting: ${analysis?.scene?.light || "Match the ambient daylight and softness in image 2."} Ground shadow preference: ${Math.round(p.shadow * 100)}% strength; keep shadows natural and local.`;
+Scene geometry: ${analysis?.scene?.perspective || "Match the existing pavement and facade perspective."} Lighting: ${analysis?.scene?.light || "Match the ambient daylight and softness in image 2."} Determine contact and cast shadows automatically from the original scene's light direction, softness and pavement; keep them natural and local.`;
   }).join("\n\n");
   const layer = version.engine === 3;
   const wholeScene = (version.engine || 0) >= 5;

@@ -7,7 +7,7 @@ import type { GoogleVenue, StreetViewCandidate, StreetViewMetadata } from "@/lib
 
 export type StreetViewSelection = { candidate: StreetViewCandidate; offset: number; fov: number; imageUrl?: string };
 
-const frameKey = (candidate: StreetViewCandidate, offset = 0, fov = candidate.fov) => `${candidate.panoId}:${offset}:${fov}`;
+const frameKey = (candidate: StreetViewCandidate, offset = 0, fov = candidate.fov) => `${candidate.panoId}:${candidate.heading}:${candidate.pitch}:${offset}:${fov}`;
 
 export function StreetViewPicker({ venue, onSelection }: { venue: GoogleVenue; onSelection: (selection: StreetViewSelection | null) => void }) {
   const [metadata, setMetadata] = useState<StreetViewMetadata | null>(null);

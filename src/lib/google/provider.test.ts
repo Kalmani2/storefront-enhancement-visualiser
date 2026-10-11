@@ -69,11 +69,16 @@ describe("Google venue and camera selection", () => {
     { pureServiceAreaBusiness: true },
     { primaryType: "hotel", types: ["hotel"] },
     { location: { latitude: 51.53, longitude: -0.136 } },
-    { containingPlaces: [{ id: "shopping-centre" }] },
     { formattedAddress: "First Floor, 1 Test Street, Soho, London" },
     { formattedAddress: undefined },
   ])("excludes unsuitable business data: %j", (override) => {
     expect(screenProspect({ ...place, ...override }, "cafe", sohoBounds)).toHaveProperty("reason");
+  });
+
+  it("flags a unit or complex without assuming it cannot have a street entrance", () => {
+    const result = screenProspect({ ...place, formattedAddress: "Unit 2, 1 Test Street", containingPlaces: [{ id: "complex" }] }, "cafe", sohoBounds);
+    expect(result).toHaveProperty("venue.prospectWarnings");
+    if ("venue" in result) expect(result.venue.prospectScore).toBeLessThan(100);
   });
 
   it("looks around the venue, deduplicates cameras, and excludes contributor imagery", async () => {

@@ -10,10 +10,13 @@ export type Project = {
   notes?: string;
   sourceUrl: string;
   createdAt: string;
+  frontageReview?: { assessmentId: string; checkedAt: string; reason: string; source: "streetview" | "places-photo"; attribution: string };
   image?: {
     provider: "google-street-view";
     panoId: string;
     headingOffset: number;
+    heading?: number;
+    pitch?: number;
     fov?: number;
     captureDate?: string;
     storagePath?: string;

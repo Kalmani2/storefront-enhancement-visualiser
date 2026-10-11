@@ -20,7 +20,7 @@ async function textSearch(body: object, fields: string) {
   return payload.places || [];
 }
 
-async function resolveArea(location: string): Promise<SearchBounds> {
+export async function resolveArea(location: string): Promise<SearchBounds> {
   if (/^soho(?:\s*,?\s*london)?$/i.test(location.trim())) return sohoBounds;
   const query = /london/i.test(location) ? location : `${location}, London`;
   const [area] = await textSearch({ textQuery: `${query}, UK`, pageSize: 1 }, "places.location,places.viewport,places.types");
@@ -38,8 +38,8 @@ async function resolveArea(location: string): Promise<SearchBounds> {
   };
 }
 
-export async function searchGoogleVenues(location: string, category: GoogleCategory): Promise<GoogleSearchResult> {
-  const bounds = await resolveArea(location);
+export async function searchGoogleVenues(location: string, category: GoogleCategory, resolvedBounds?: SearchBounds): Promise<GoogleSearchResult> {
+  const bounds = resolvedBounds ?? await resolveArea(location);
   const profile = categoryProfiles[category];
   const places = await textSearch({
     textQuery: profile.query, includedType: profile.type, strictTypeFiltering: true,
@@ -57,9 +57,22 @@ export async function searchGoogleVenues(location: string, category: GoogleCateg
     venues.push(result.venue);
   }
   return {
-    location: /london/i.test(location) ? location : `${location}, London`, category, venues,
+    location: /london/i.test(location) ? location : `${location}, London`, category, venues: venues.sort((a, b) => (b.prospectScore || 0) - (a.prospectScore || 0)), bounds,
     totalFound: places.length, excluded: [...excluded].map(([reason, count]) => ({ reason, count })),
   };
+}
+
+// Resolve the area once and interleave categories so the first ten aren't all cafes.
+export async function searchMixedVenues(location: string): Promise<GoogleSearchResult> {
+  const bounds = await resolveArea(location);
+  const results = await Promise.all((["cafe", "restaurant", "hair salon"] as const).map(category => searchGoogleVenues(location, category, bounds)));
+  const seen = new Set<string>(), venues: GoogleVenue[] = [];
+  for (let index = 0; index < 20; index++) for (const result of results) {
+    const venue = result.venues[index];
+    if (venue && !seen.has(venue.placeId)) { seen.add(venue.placeId); venues.push(venue); }
+  }
+  return { location: results[0].location, category: "all", bounds, venues,
+    totalFound: results.reduce((sum, result) => sum + (result.totalFound || 0), 0), excluded: results.flatMap(result => result.excluded || []) };
 }
 
 // Explicit lookup intentionally bypasses prospect category/chain screening.

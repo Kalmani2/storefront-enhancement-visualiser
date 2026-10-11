@@ -71,12 +71,15 @@ export function screenProspect(place: GooglePlace, category: GoogleCategory, bou
   if (!categoryProfiles[category].matches.some((type) => types.has(type))) return { reason: "Does not match the selected business type" };
   if (types.has("meal_delivery") && !types.has("restaurant")) return { reason: "Delivery business without a restaurant frontage" };
   if (isKnownChain(place.displayName.text)) return { reason: "Known chain or large retail brand" };
-  if (place.containingPlaces?.length) return { reason: "Premises inside another venue or complex" };
   const address = place.formattedAddress || "";
   const components = place.addressComponents || [];
   const hasStreet = components.some((component) => component.types?.includes("route")) || /\b(street|st\b|road|rd\b|lane|ln\b|place|square|mews|avenue|court|terrace|walk|gardens|way|circus|yard|row|hill|passage|market|broadwick|piccadilly|strand)\b/i.test(address);
   if (!address || !hasStreet) return { reason: "No identifiable street address" };
-  if (/\b(basement|lower ground|upper ground|first floor|second floor|third floor|\d+(?:st|nd|rd|th) floor|suite|unit)\b/i.test(address)) return { reason: "Address indicates an internal or non-ground-floor unit" };
+  if (/\b(basement|lower ground|first floor|second floor|third floor|\d+(?:st|nd|rd|th) floor)\b/i.test(address)) return { reason: "Address indicates a non-ground-floor unit" };
+  const warnings = [
+    ...(place.containingPlaces?.length ? ["Inside another complex: street entrance needs visual confirmation"] : []),
+    ...(/\b(suite|unit|upper ground)\b/i.test(address) ? ["Unit address: street access needs visual confirmation"] : []),
+  ];
   return { venue: {
     placeId: place.id, name: place.displayName.text, address, latitude, longitude,
     category: place.primaryType?.replaceAll("_", " ") || category,
@@ -85,5 +88,7 @@ export function screenProspect(place: GooglePlace, category: GoogleCategory, bou
     businessStatus: "OPERATIONAL",
     mapsUrl: place.googleMapsUri || `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(place.id)}`,
     prospectReasons: ["Listed as operational", "Relevant business type", "Physical street address", "No known-chain match"],
+    prospectWarnings: warnings,
+    prospectScore: 100 - warnings.length * 20 + (components.some(c => c.types?.includes("street_number")) ? 5 : 0),
   } };
 }

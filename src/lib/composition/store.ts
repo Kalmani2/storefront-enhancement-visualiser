@@ -54,7 +54,7 @@ export async function writeComposition(id: string, state: CompositionState) {
 }
 
 export function parsePlacements(value: unknown): Placement[] {
-  if (!Array.isArray(value) || value.length > 6) throw new PlanterError("Use up to six planter arrangements.");
+  if (!Array.isArray(value) || value.length > 3) throw new PlanterError("Use up to three planter arrangements.");
   const ids = new Set<string>();
   return value.map(p => {
     if (!p || typeof p !== "object" || ![p.x, p.y, p.height, p.shadow].every(Number.isFinite) || p.x < 0 || p.x > 1 || p.y < .1 || p.y > .94 || p.height < .03 || p.height > .9 || p.shadow < 0 || p.shadow > 1 || typeof p.perspective !== "boolean") throw new PlanterError("Invalid planter placement.");

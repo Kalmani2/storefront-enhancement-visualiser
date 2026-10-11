@@ -17,10 +17,12 @@ export function parseProject(value: unknown): Project {
   if (typeof p.sourceUrl !== "string" || !/^https:\/\//.test(p.sourceUrl) || p.sourceUrl.length > 2000) throw new PlanterError("Invalid venue source link.");
   for (const field of [p.address, p.category]) if (field !== undefined && (typeof field !== "string" || field.length > 1000)) throw new PlanterError("Invalid venue information.");
   if (p.notes !== undefined && (typeof p.notes !== "string" || p.notes.length > 2000)) throw new PlanterError("Use notes of 2,000 characters or fewer.");
+  if (p.frontageReview && (typeof p.frontageReview.assessmentId !== "string" || !/^[a-f0-9]{64}$/.test(p.frontageReview.assessmentId) || !Number.isFinite(Date.parse(p.frontageReview.checkedAt)) || typeof p.frontageReview.reason !== "string" || p.frontageReview.reason.length > 1500 || !["streetview", "places-photo"].includes(p.frontageReview.source) || typeof p.frontageReview.attribution !== "string" || p.frontageReview.attribution.length > 2000)) throw new PlanterError("Invalid frontage assessment reference.");
   if (p.configuration && (!["classic", "trough", "cylinder"].includes(p.configuration.planter) || !Number.isInteger(p.configuration.quantity) || p.configuration.quantity < 1 || p.configuration.quantity > 4 || !["left", "right", "both"].includes(p.configuration.placement))) throw new PlanterError("Invalid planter configuration.");
   if (p.image) {
     const image = p.image;
     if (image.provider === "google-street-view") {
+      if ((image.heading !== undefined && (!Number.isFinite(image.heading) || image.heading < 0 || image.heading >= 360)) || (image.pitch !== undefined && (!Number.isFinite(image.pitch) || image.pitch < -90 || image.pitch > 90))) throw new PlanterError("Invalid absolute camera framing.");
       if (typeof image.panoId !== "string" || image.panoId.length > 300 || !Number.isFinite(image.headingOffset) || (image.fov !== undefined && (!Number.isFinite(image.fov) || image.fov < 10 || image.fov > 120))) throw new PlanterError("Invalid Street View framing.");
       if (image.storagePath !== undefined && (typeof image.storagePath !== "string" || !image.storagePath.startsWith(`storefronts/${p.id}/`) || image.storagePath.includes(".."))) throw new PlanterError("Invalid saved Street View image.");
     } else if (image.provider === "mapillary") {
@@ -30,7 +32,7 @@ export function parseProject(value: unknown): Project {
     } else throw new PlanterError("Unknown image provider.");
   }
   // Explicit fields prevent untrusted request data being persisted accidentally.
-  return { id: p.id, title: p.title.trim(), venueId: p.venueId, source: p.source, sourceUrl: p.sourceUrl, createdAt: p.createdAt, address: p.address, category: p.category, notes: p.notes, image: p.image, configuration: p.configuration };
+  return { id: p.id, title: p.title.trim(), venueId: p.venueId, source: p.source, sourceUrl: p.sourceUrl, createdAt: p.createdAt, address: p.address, category: p.category, notes: p.notes, image: p.image, configuration: p.configuration, frontageReview: p.frontageReview };
 }
 
 export async function updateProjectDetails(id: string, value: unknown): Promise<Project> {
@@ -70,7 +72,7 @@ export async function storeProject(project: Project, migration = false) {
   }
   if (project.image?.provider === "google-street-view" && project.image.storagePath) {
     const existing = await getProject(project.id);
-    if (existing.image?.provider !== "google-street-view" || existing.image.storagePath !== project.image.storagePath || existing.image.panoId !== project.image.panoId || existing.image.headingOffset !== project.image.headingOffset || existing.image.fov !== project.image.fov) throw new PlanterError("Save Street View images through the project's source endpoint.");
+    if (existing.image?.provider !== "google-street-view" || existing.image.storagePath !== project.image.storagePath || existing.image.panoId !== project.image.panoId || existing.image.headingOffset !== project.image.headingOffset || existing.image.fov !== project.image.fov || existing.image.heading !== project.image.heading || existing.image.pitch !== project.image.pitch) throw new PlanterError("Save Street View images through the project's source endpoint.");
   }
   const { data, error } = await storageClient().from("projects").upsert({ id: project.id, title: project.title, data: project, created_at: project.createdAt, updated_at: new Date().toISOString() }, { onConflict: "id", ignoreDuplicates: migration }).select("data").maybeSingle();
   if (error) throw new PlanterError("The project could not be saved.", 502);
@@ -88,13 +90,13 @@ export async function storeGoogleFrontage(project: Project, bytes: Buffer, copyr
   return updated;
 }
 
-export async function storeFrontage(id: string, bytes: Buffer, originalFilename: string) {
+export async function storeFrontage(id: string, bytes: Buffer, originalFilename: string, frontageReview?: Project["frontageReview"]) {
   const project = await getProject(id);
   const source = await normaliseSource(bytes);
   const key = `storefronts/${project.id}/${randomUUID()}.${source.extension}`;
   // Keep uploaded originals byte-for-byte; do not silently resize the saved source.
   await putFile(key, bytes);
-  const updated: Project = { ...project, image: { provider: "uploaded", storagePath: key, originalFilename: originalFilename.slice(0, 200), width: source.originalWidth, height: source.originalHeight } };
+  const updated: Project = { ...project, frontageReview, image: { provider: "uploaded", storagePath: key, originalFilename: originalFilename.slice(0, 200), width: source.originalWidth, height: source.originalHeight } };
   const { error } = await storageClient().from("projects").update({ data: updated, updated_at: new Date().toISOString() }).eq("id", project.id);
   if (error) throw new PlanterError("Image uploaded, but the project could not be updated. Try again.", 502);
   return updated;

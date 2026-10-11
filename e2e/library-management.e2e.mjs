@@ -30,6 +30,7 @@ test("manage shared library details and confirm deletions on desktop and mobile"
   await page.goto("/");
   await page.getByRole("button", { name: "Edit project Soho cafe" }).click();
   await expect(page.getByRole("dialog", { name: "Edit project" })).toBeVisible();
+  await expect(page.getByText("Updates saved details only.", { exact: false })).toHaveCount(0);
   await page.getByLabel("Project name").fill("Soho planting concept");
   await page.getByLabel("Address", { exact: true }).fill("Soho, London");
   await page.getByLabel("Project notes").fill("Two planters beside the entrance");
@@ -46,6 +47,7 @@ test("manage shared library details and confirm deletions on desktop and mobile"
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Edit planter Garden pair" }).click();
+  await expect(page.getByText("Updates saved details only.", { exact: false })).toHaveCount(0);
   await page.getByLabel("Planter name").fill("Terracotta pair");
   await page.getByLabel("Planter notes").fill("Two warm terracotta containers");
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);

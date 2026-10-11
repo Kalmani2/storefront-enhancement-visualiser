@@ -53,7 +53,9 @@ describe("scale and placement", () => {
   it("rejects malformed, duplicate and excessive placements", () => {
     expect(() => parsePlacements([{ ...placement, x: Infinity }])).toThrow();
     expect(() => parsePlacements([placement, placement])).toThrow();
-    expect(() => parsePlacements(Array(7).fill(placement))).toThrow();
+    const placements = Array.from({ length: 4 }, (_, index) => ({ ...placement, id: `33333333-3333-4333-8333-33333333333${index}` }));
+    expect(parsePlacements(placements.slice(0, 3))).toHaveLength(3);
+    expect(() => parsePlacements(placements)).toThrow("up to three");
     expect(parsePlacements([placement])).toEqual([placement]);
   });
   it("uses structured visual reference estimates and falls back when no reference exists", async () => {

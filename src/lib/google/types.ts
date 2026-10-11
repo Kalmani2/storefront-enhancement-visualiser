@@ -10,6 +10,8 @@ export type GoogleVenue = {
   primaryType?: string;
   streetName?: string;
   prospectReasons?: string[];
+  prospectWarnings?: string[];
+  prospectScore?: number;
 };
 
 export type GoogleSearchResult = {
@@ -18,6 +20,7 @@ export type GoogleSearchResult = {
   venues: GoogleVenue[];
   totalFound?: number;
   excluded?: { reason: string; count: number }[];
+  bounds?: { south: number; north: number; west: number; east: number };
 };
 
 export type StreetViewMetadata = {

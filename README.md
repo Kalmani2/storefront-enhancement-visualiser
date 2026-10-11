@@ -6,6 +6,7 @@ Built with Next.js, TypeScript, Tailwind CSS, shadcn/ui and Lucide icons.
 
 ## Features
 
+- Automatic frontage discovery: mixed business searches, entrance/identity/placement checks, one Street View retry and Google Places photo fallback. Approved venues are saved separately from projects and reused without repeated vision calls.
 - Find London prospects by area and business type, or search a specific business name or street address using Google Places.
 - Compare up to five outdoor Street View candidates and adjust camera direction and framing.
 - Save the selected Street View with a project, choose approved planters, automatically estimate scale, and drag arrangements onto the storefront.
@@ -33,6 +34,8 @@ Copy `.env.example` to `.env.local` and add keys for the features you want:
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` and `SUPABASE_STORAGE_BUCKET=storefront-assets`: shared database and private image storage. Use the same values locally and on Vercel; the secret key stays server-side.
 
 For a new Supabase project, run `supabase/migrations/202610100001_shared_library.sql` in its SQL Editor once. To copy an existing local planter library, run `npm run import:planters`. It uploads and verifies existing files without generating images or deleting local originals.
+
+For automatic discovery, also run `supabase/migrations/202610110001_frontage_discovery.sql`. Open **Automatic frontage discovery**, choose **Discover new**, enter a London area and confirm the batch. Defaults: 3 new approvals, at most 10 businesses and 20 image/vision requests. Approved views and failed checks are reused. Refreshing pauses a run; Resume explicitly continues its existing budget. `OPENAI_FRONTAGE_MODEL` defaults to `gpt-4.1-mini`. Set `ENABLE_HOSTED_DISCOVERY=true` in Vercel only when you want to enable confirmed paid discovery there; saved previews do not invoke vision. Image reuse requires appropriate rights, independent of visual approval.
 
 Keep secret API keys server-side; Supabase's publishable key is intended for browser use. Never commit `.env.local`. External API calls may incur charges.
 
