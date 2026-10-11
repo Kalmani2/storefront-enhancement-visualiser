@@ -53,6 +53,19 @@ export function StorefrontComposer({ project }: { project: Project }) {
 
   useEffect(() => {
     let active = true;
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      void request<{ assets: PlanterAsset[] }>("/api/planters").then(library => {
+        if (active) setAssets(library.assets);
+      }).catch(cause => { if (active) setError(cause.message); });
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     const needed = placements.filter(p => !bitmaps[estimateKey(p.assetId, p.revisionId)]);
     if (needed.length) void Promise.all(needed.map(async p => {
       const key = estimateKey(p.assetId, p.revisionId);
@@ -124,10 +137,17 @@ export function StorefrontComposer({ project }: { project: Project }) {
     return scale;
   }
   async function add(asset: PlanterAsset) {
-    if (!asset.approvedRevisionId || locked || placements.length >= 3) return;
+    const revisionId = asset.approvedRevisionId || asset.revisions.at(-1)?.id;
+    if (!revisionId || asset.status === "processing" || locked || placements.length >= 3) return;
     setEstimating(asset.id); setError("");
     try {
-      const revisionId = asset.approvedRevisionId, scale = await calibrate(asset.id, revisionId);
+      if (!asset.approvedRevisionId) {
+        const response = await fetch(`/api/planters/${encodeURIComponent(asset.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approvedRevisionId: revisionId }) });
+        const approved = await response.json();
+        if (!response.ok) throw new Error(approved.error || "Could not approve this planter.");
+        setAssets(previous => previous.map(item => item.id === asset.id ? approved : item));
+      }
+      const scale = await calibrate(asset.id, revisionId);
       const p: Placement = { id: crypto.randomUUID(), assetId: asset.id, revisionId, x: clamp(scale.ground.x + placements.length * .12, .06, .94), y: scale.ground.y, height: scale.height, perspective: true, shadow: .65 };
       change([...placements, p]); setSelectedId(p.id);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not place this planter."); }
@@ -264,8 +284,14 @@ export function StorefrontComposer({ project }: { project: Project }) {
     <aside className="space-y-5 xl:sticky xl:top-5">
       <section className="border border-[#d2d9cc] bg-[#faf9f2] p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="font-serif text-2xl text-[#254733]">Planters</h2><Link href="/#planter-library-title" className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#315e44] hover:underline"><Plus size={14} />Add planter</Link></div>
-        <div className="grid grid-cols-2 gap-3">{assets.filter(a => a.approvedRevisionId).map(asset => <button key={asset.id} type="button" disabled={!state || locked || placements.length >= 3} onClick={() => void add(asset)} aria-label={`Place ${asset.name}`} className="border border-[#d4ddcd] bg-[#f1f3e9] text-left transition hover:border-[#62806b] disabled:opacity-50"><img src={planterFileUrl(asset.id, revisionFile(asset.approvedRevisionId!))} alt={asset.name} className="planter-checker h-28 w-full object-contain p-2" /><span className="block px-2.5 py-2.5 text-[11px] font-semibold leading-4 text-[#48654e]">{estimating === asset.id ? "Reading scene…" : asset.name}</span></button>)}</div>
-        {!assets.some(a => a.approvedRevisionId) && <p className="text-sm leading-6 text-[#778873]">Approve a cleaned planter in the <Link href="/" className="underline">planter library</Link> to place it here.</p>}
+        <div className="grid grid-cols-2 gap-3">{assets.filter(a => a.revisions.length > 0).map(asset => {
+          const revisionId = asset.approvedRevisionId || asset.revisions.at(-1)!.id;
+          return <div key={asset.id} className="border border-[#d4ddcd] bg-[#f1f3e9]">
+            <button type="button" disabled={!state || locked || placements.length >= 3 || asset.status === "processing"} onClick={() => void add(asset)} aria-label={`${asset.approvedRevisionId ? "Place" : "Approve and place"} ${asset.name}`} className="w-full text-left transition hover:bg-[#e8eee2] disabled:opacity-50"><img src={planterFileUrl(asset.id, revisionFile(revisionId))} alt={asset.name} className="planter-checker h-28 w-full object-contain p-2" /><span className="block px-2.5 py-2.5 text-[11px] font-semibold leading-4 text-[#48654e]">{estimating === asset.id ? "Reading scene…" : asset.name}{!asset.approvedRevisionId && <span className="mt-1 block font-normal">{asset.status === "processing" ? "Extracting…" : "Approve & place"}</span>}</span></button>
+            {!asset.approvedRevisionId && <Link href={`/planters/${asset.id}`} className="block border-t border-[#d4ddcd] px-2.5 py-2 text-[11px] text-[#48654e] underline">Review cutout</Link>}
+          </div>;
+        })}</div>
+        {!assets.some(a => a.revisions.length > 0) && <p className="text-sm leading-6 text-[#778873]">Extract a planter in the <Link href="/#planter-library-title" className="underline">planter library</Link> to place it here.</p>}
         {placements.length >= 3 && <p className="mt-3 text-xs text-[#7b8876]">Maximum of 3 planters.</p>}
       </section>
       {placements.length > 0 && <section className="border border-[#d2d9cc] bg-[#faf9f2] p-5">

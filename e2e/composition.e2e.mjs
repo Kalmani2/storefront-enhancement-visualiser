@@ -116,3 +116,41 @@ test("Studio image selection, numeric scale, automatic shadows and AI image down
   expect(state.versions).toHaveLength(0);
   expect(errors).toEqual([]);
 });
+
+test("New extracted planters appear, approve before calibration, and refresh without losing placement", async ({ page }) => {
+  const project = { id: "google-new-planter-test", title: "New planter test", source: "google", createdAt: new Date().toISOString(), image: { provider: "google-street-view", storagePath: "storefronts/test/source.png" } };
+  const asset = { id: "11111111-1111-4111-8111-111111111111", name: "Long cream planter", status: "review", revisions: [{ id: "22222222-2222-4222-8222-222222222222", width: 120, height: 240, contactPoint: { x: .5, y: .98 } }] };
+  const image = await sharp({ create: { width: 640, height: 480, channels: 4, background: "#eee" } }).png().toBuffer();
+  const state = { draft: [], calibrations: {}, versions: [], configured: true };
+  let assets = [asset], approved = false, calibrations = 0;
+  await page.route("**/api/projects", route => route.fulfill({ json: [project] }));
+  await page.route("**/api/projects/*/image", route => route.fulfill({ contentType: "image/png", body: image }));
+  await page.route("**/api/planters", route => route.fulfill({ json: { assets } }));
+  await page.route("**/api/planters/*/files/*", route => route.fulfill({ contentType: "image/png", body: image }));
+  await page.route(`**/api/planters/${asset.id}`, route => {
+    expect(route.request().method()).toBe("PATCH");
+    expect(route.request().postDataJSON().approvedRevisionId).toBe(asset.revisions[0].id);
+    approved = true; asset.approvedRevisionId = asset.revisions[0].id; asset.status = "approved";
+    return route.fulfill({ json: asset });
+  });
+  await page.route("**/api/projects/*/composition", route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: state });
+    const body = route.request().postDataJSON();
+    if (body.action === "calibrate") {
+      expect(approved).toBe(true); calibrations++;
+      return route.fulfill({ json: { assetId: asset.id, revisionId: asset.revisions[0].id, analysisVersion: 2, method: "heuristic", confidence: "low", reference: { top: { x: .6, y: .3 }, bottom: { x: .6, y: .78 }, heightMetres: 2.1 }, containerHeightMetres: .6, containerFraction: .4, height: .34, ground: { x: .4, y: .8 }, horizon: .4 } });
+    }
+    state.draft = body.placements; return route.fulfill({ json: state });
+  });
+  await page.goto(`/studio?id=${project.id}`);
+  await expect(page.getByRole("link", { name: "Review cutout" })).toBeVisible();
+  await page.getByRole("button", { name: "Approve and place Long cream planter" }).click();
+  const placed = page.getByRole("group", { name: "Placed planters", exact: true });
+  await expect(placed.getByRole("button")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Place Long cream planter", exact: true })).toBeEnabled();
+  assets = [...assets, { ...asset, id: "33333333-3333-4333-8333-333333333333", name: "Another new planter", status: "review", approvedRevisionId: undefined }];
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("button", { name: "Approve and place Another new planter" })).toBeVisible();
+  await expect(placed.getByRole("button")).toHaveCount(1);
+  expect(calibrations).toBe(1);
+});
