@@ -43,6 +43,13 @@ export async function signedFileUrl(key: string, download?: string) {
   return data.signedUrl;
 }
 
+export async function removeCompositionFiles(keys: string[]) {
+  if (!keys.length) return;
+  if (keys.some(key => !/^compositions\/[a-zA-Z0-9_-]{1,220}\/[a-zA-Z0-9_-]+\.(png|json)$/.test(key) || key.endsWith('/state.json'))) throw new PlanterError("Invalid composition cleanup.");
+  const { error } = await storageClient().storage.from(storageBucket()).remove(keys);
+  if (error) throw new PlanterError("Some version files could not be cleaned up.", 502);
+}
+
 // Library assets are flat folders. Collect all pages before deleting so offsets
 // cannot skip objects as the listing shrinks. Never accept a bucket/root prefix.
 export async function removeAssetFolder(prefix: string) {

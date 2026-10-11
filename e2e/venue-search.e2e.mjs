@@ -22,6 +22,7 @@ test("direct lookup, prospect mode, group loading, framing and project saving", 
     return route.fulfill({ json: project });
   });
   await page.route("**/api/projects/*/image", route => route.fulfill({ contentType: "image/jpeg", body: jpeg }));
+  await page.route("**/api/projects/*/cover", route => route.fulfill({ contentType: "image/jpeg", body: jpeg }));
   page.on("pageerror", error => errors.push(error.message));
   page.on("dialog", dialog => dialog.accept());
   await page.route("**/api/google/**", async route => {

@@ -172,6 +172,21 @@ export function StorefrontComposer({ project }: { project: Project }) {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not create this output."); }
     finally { setBusy(false); }
   }
+  async function deleteVersion(versionId: string) {
+    if (locked || !window.confirm("Delete this generated version? This cannot be undone.")) return;
+    setBusy(true); setError("");
+    try {
+      await saveChain.current.catch(() => {});
+      const saved = await request<CompositionState & { warning?: string }>(endpoint, { action: "delete-version", versionId });
+      setState(previous => ({ ...previous, ...saved }));
+      if (output?.id === versionId) {
+        const latest = saved.versions.filter(version => version.enhancedFile).at(-1);
+        setOutputId(latest?.id || ""); setView(latest ? "enhanced" : "placement");
+      }
+      if (saved.warning) setError(saved.warning);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not delete this version."); }
+    finally { setBusy(false); }
+  }
   async function approveOutput() {
     if (!output || locked) return; setBusy(true);
     try { const saved = await request<CompositionState>(endpoint, { action: "approve", versionId: output.id }); setState(previous => ({ ...previous, ...saved })); }
@@ -238,6 +253,7 @@ export function StorefrontComposer({ project }: { project: Project }) {
               {version.rawFile && !version.enhancedFile && [3, 4, 5].includes(version.engine || 0) && <button type="button" disabled={locked} onClick={() => void recover(version.id)} className="underline underline-offset-2 disabled:opacity-40">Recover render</button>}
               {version.enhancedFile && (!version.review || version.review.status === "passed") && <a href={compositionFileUrl(project.id, version.enhancedFile, true)} className="underline underline-offset-2">Download image</a>}
               {version.enhancedFile && version.review && version.review.status !== "passed" && <span className="text-[#987148]">{version.review.status === "rejected" ? "Quality check failed" : "Needs review"}</span>}
+              <button type="button" disabled={locked} aria-label={`Delete version ${outputs.indexOf(version) + 1}`} onClick={() => void deleteVersion(version.id)} className="inline-flex items-center gap-1 text-[#956250] disabled:opacity-40"><Trash2 size={12} />Delete</button>
               <button type="button" disabled={locked} onClick={() => { change(version.placements); setSelectedId(version.placements[0]?.id || ""); }} className="underline underline-offset-2 disabled:opacity-40">Edit layout</button>
             </div>
           </div>

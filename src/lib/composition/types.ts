@@ -42,5 +42,8 @@ export type CompositionState = {
   error?: string;
   resultVersionId?: string;
 };
+export function latestEnhancedVersion(versions: CompositionVersion[]) {
+  return versions.filter(version => version.enhancedFile).reduce<CompositionVersion | undefined>((latest, version) => !latest || Date.parse(version.createdAt) >= Date.parse(latest.createdAt) ? version : latest, undefined);
+}
 export const estimateKey = (assetId: string, revisionId: string) => `${assetId}:${revisionId}`;
 export const compositionFileUrl = (projectId: string, file: string, download = false) => `/api/projects/${encodeURIComponent(projectId)}/composition/files/${encodeURIComponent(file)}${download ? "?download=1" : ""}`;

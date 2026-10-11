@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { deleteCompositionVersion } from "@/lib/composition/versions";
 import { getProject } from "@/lib/project-store";
 import { locked } from "@/lib/planters/store";
 import { planterFailure, requireMutation, requireLocalMutation } from "@/lib/planters/http";
@@ -24,6 +25,7 @@ export async function POST(request: Request, context: Context) {
     const text = await request.text();
     if (text.length > 50_000) throw new PlanterError("Composition details are too large.", 413);
     const body = JSON.parse(text), project = await getProject((await context.params).id);
+    if (body.action === "delete-version") return Response.json(await deleteCompositionVersion(project, body.versionId));
     if (body.action === "calibrate") {
       const assetId = validId(body.assetId), revisionId = validId(body.revisionId), key = estimateKey(assetId, revisionId);
       return await locked(`composition:${project.id}`, async () => {

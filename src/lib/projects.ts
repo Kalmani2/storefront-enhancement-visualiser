@@ -115,3 +115,8 @@ export function projectImageUrl(project: Project) {
   if (project.image?.provider === "mapillary") return project.image.url;
   return undefined;
 }
+
+export function projectCoverUrl(project: Project) {
+  if ((project.image?.provider === "uploaded" || project.image?.provider === "google-street-view") && project.image.storagePath) return `/api/projects/${encodeURIComponent(project.id)}/cover`;
+  return projectImageUrl(project);
+}

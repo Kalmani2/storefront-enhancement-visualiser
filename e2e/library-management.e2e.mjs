@@ -5,7 +5,7 @@ test("manage shared library details and confirm deletions on desktop and mobile"
   const image = await sharp({ create: { width: 320, height: 240, channels: 3, background: "#b7c7a8" } }).png().toBuffer();
   const id = "11111111-1111-4111-8111-111111111111";
   let projects = [{ id: "google-demo", title: "Soho cafe", venueId: "demo", source: "google", sourceUrl: "https://maps.google.com", createdAt: "2026-10-10", image: { provider: "uploaded", storagePath: "storefronts/google-demo/front.png", originalFilename: "front.png", width: 320, height: 240 } }];
-  let assets = [{ id, name: "Garden pair", status: "uploaded", createdAt: "2026-10-10", updatedAt: "2026-10-10", originalFilename: "garden.png", originalFile: "original.png", source: { width: 320, height: 240 }, revisions: [] }];
+  let assets = [{ id, name: "Garden pair", status: "approved", approvedRevisionId: "22222222-2222-4222-8222-222222222222", createdAt: "2026-10-10", updatedAt: "2026-10-10", originalFilename: "garden.png", originalFile: "original.png", source: { width: 320, height: 240 }, revisions: [{ id: "22222222-2222-4222-8222-222222222222", width: 320, height: 240 }] }];
   let deletes = 0;
   const calls = [], errors = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -13,7 +13,7 @@ test("manage shared library details and confirm deletions on desktop and mobile"
   await page.route("**/api/**", async route => {
     const request = route.request(), pathname = new URL(request.url()).pathname;
     calls.push(`${request.method()} ${pathname}`);
-    if (pathname.endsWith("/image") || pathname.includes("/files/")) return route.fulfill({ contentType: "image/png", body: image });
+    if (pathname.endsWith("/cover") || pathname.endsWith("/image") || pathname.includes("/files/")) return route.fulfill({ contentType: "image/png", body: image });
     if (pathname === "/api/projects") return route.fulfill({ json: projects });
     if (pathname === "/api/planters") return route.fulfill({ json: { assets, configured: false, storage: "supabase", uploadsAvailable: true } });
     if (pathname === "/api/projects/google-demo") {
@@ -28,6 +28,11 @@ test("manage shared library details and confirm deletions on desktop and mobile"
   });
 
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Garden pair" })).toBeVisible();
+  await expect(page.getByText("Approved", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Ready to use", { exact: true })).toHaveCount(0);
+  await expect(page.getByAltText("Frontage for Soho cafe")).toHaveAttribute("src", "/api/projects/google-demo/image");
+  await page.screenshot({ path: ".cache/library-cards-desktop.png", fullPage: true });
   await page.getByRole("button", { name: "Edit project Soho cafe" }).click();
   await expect(page.getByRole("dialog", { name: "Edit project" })).toBeVisible();
   await expect(page.getByText("Updates saved details only.", { exact: false })).toHaveCount(0);
@@ -39,6 +44,7 @@ test("manage shared library details and confirm deletions on desktop and mobile"
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Soho planting concept" })).toBeVisible();
+  await expect(page.getByText("Soho, London", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Delete project Soho planting concept" }).click();
   await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
   await page.keyboard.press("Escape");
